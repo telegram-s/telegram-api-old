@@ -1,12 +1,11 @@
 package org.telegram.api.engine;
 
+import org.telegram.api.TLAbsUpdates;
 import org.telegram.api.TLApiContext;
 import org.telegram.api.TLConfig;
 import org.telegram.api.TLDcOption;
 import org.telegram.api.auth.TLExportedAuthorization;
-import org.telegram.api.engine.storage.ApiState;
-import org.telegram.api.engine.storage.AuthKey;
-import org.telegram.api.engine.storage.DcInfo;
+import org.telegram.api.engine.storage.AbsApiState;
 import org.telegram.api.requests.*;
 import org.telegram.api.upload.TLFile;
 import org.telegram.mtproto.CallWrapper;
@@ -14,6 +13,7 @@ import org.telegram.mtproto.MTProto;
 import org.telegram.mtproto.MTProtoCallback;
 import org.telegram.mtproto.pq.Authorizer;
 import org.telegram.mtproto.pq.PqAuth;
+import org.telegram.mtproto.state.ConnectionInfo;
 import org.telegram.mtproto.state.MemoryProtoState;
 import org.telegram.tl.TLBool;
 import org.telegram.tl.TLBoolTrue;
@@ -23,6 +23,8 @@ import sun.plugin.dom.exception.InvalidStateException;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * Created with IntelliJ IDEA.
@@ -41,6 +43,8 @@ public class TelegramApi {
 
     private MTProto mainProto;
 
+    private UpdateCatcher updateCatcher;
+
     private final HashMap<Integer, MTProto> streamingProtos = new HashMap<Integer, MTProto>();
     private final HashMap<Integer, Object> streamingSync = new HashMap<Integer, Object>();
 
@@ -54,28 +58,26 @@ public class TelegramApi {
     private CallbackThread timeoutThread;
     private final TreeMap<Long, Integer> timeoutTimes = new TreeMap<Long, Integer>();
 
-    private boolean isAuthenticated = false;
-
     private boolean isRegisteredInApi = false;
 
-    private ApiState state;
+    private AbsApiState state;
 
-    public TelegramApi(ApiState state, int primaryDc) {
-        if (state.getAuthKey(primaryDc) == null) {
+    public TelegramApi(AbsApiState state) {
+        if (state.getAuthKey(state.getPrimaryDc()) == null) {
             throw new InvalidStateException("ApiState might be in authenticated state for primaryDc");
         }
         this.state = state;
-        this.primaryDc = primaryDc;
+        this.primaryDc = state.getPrimaryDc();
         this.callback = new ProtoCallback();
         this.apiContext = new TLApiContext();
         this.isClosed = false;
         this.timeoutThread = new CallbackThread();
         this.timeoutThread.start();
 
-        AuthKey key = state.getAuthKey(primaryDc);
-        DcInfo dc = state.getDcState(primaryDc);
+        byte[] key = state.getAuthKey(primaryDc);
+        ConnectionInfo dc = state.getConnectionInfo(primaryDc);
 
-        mainProto = new MTProto(new MemoryProtoState(key.getAuthKey(), dc.getIp(), dc.getPort()), callback,
+        mainProto = new MTProto(state.getMtProtoState(primaryDc), callback,
                 new CallWrapper() {
                     @Override
                     public TLObject wrapObject(TLMethod srcRequest) {
@@ -89,8 +91,34 @@ public class TelegramApi {
                 });
     }
 
+    public AbsApiState getState() {
+        return state;
+    }
+
+    public UpdateCatcher getUpdateCatcher() {
+        return updateCatcher;
+    }
+
+    public void setUpdateCatcher(UpdateCatcher updateCatcher) {
+        this.updateCatcher = updateCatcher;
+    }
+
+    public TLApiContext getApiContext() {
+        return apiContext;
+    }
+
     public MTProto getMainProto() {
         return mainProto;
+    }
+
+    protected void onMessageArrived(TLObject object) {
+        if (object instanceof TLAbsUpdates) {
+            if (updateCatcher != null) {
+                updateCatcher.onUpdate((TLAbsUpdates) object);
+            }
+        } else {
+
+        }
     }
 
     public boolean doSaveFilePart(long _fileId, int _filePart, byte[] _bytes) throws IOException {
@@ -108,7 +136,8 @@ public class TelegramApi {
         if (isClosed) {
             throw new TimeoutException();
         }
-        if (!isAuthenticated) {
+
+        if (!state.isAuthenticated(primaryDc)) {
             throw new TimeoutException();
         }
 
@@ -134,61 +163,83 @@ public class TelegramApi {
             }
 
             if (proto == null) {
-                DcInfo dc = state.getDcState(dcId);
+                ConnectionInfo connectionInfo = state.getConnectionInfo(dcId);
 
-                if (dc == null) {
+                if (connectionInfo == null) {
                     TLConfig config = doRpcCall(new TLRequestHelpGetConfig());
-                    for (TLDcOption option : config.getDcOptions()) {
-                        state.addDcInfo(option.getId(), option.getIpAddress(), option.getPort());
-                    }
-                    dc = state.getDcState(dcId);
+                    state.updateSettings(config);
+                    connectionInfo = state.getConnectionInfo(dcId);
                 }
 
-                if (dc == null) {
+                if (connectionInfo == null) {
                     throw new TimeoutException();
                 }
 
                 if (dcId != primaryDc) {
 
-                    AuthKey authKey = state.getAuthKey(dcId);
+                    if (state.isAuthenticated(dcId)) {
+                        byte[] authKey = state.getAuthKey(dcId);
+                        if (authKey == null) {
+                            throw new TimeoutException();
+                        }
+                        proto = new MTProto(state.getMtProtoState(dcId), callback,
+                                new CallWrapper() {
+                                    @Override
+                                    public TLObject wrapObject(TLMethod srcRequest) {
+                                        // TODO: Implement
+                                        return new TLRequestInvokeWithLayer8(srcRequest);
+                                    }
+                                });
 
-                    if (authKey == null) {
+                        if (!state.isAuthenticated(dcId)) {
+                            TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
+                            doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
+                        }
+
+                        streamingProtos.put(dcId, proto);
+                        return proto;
+                    } else {
                         Authorizer authorizer = new Authorizer();
-                        PqAuth auth = authorizer.doAuth(dc.getIp(), dc.getPort());
+                        PqAuth auth = authorizer.doAuth(connectionInfo.getAddress(), connectionInfo.getPort());
                         if (auth == null) {
                             throw new TimeoutException();
                         }
-                        state.putNewAuthKey(dcId, auth.getAuthKey(), new byte[8], auth.getServerSalt());
+                        state.putAuthKey(dcId, auth.getAuthKey());
+                        state.setAuthenticated(dcId, false);
+
+                        // TODO: write server salt
+                        // state.putNewAuthKey(dcId, auth.getAuthKey(), new byte[8], auth.getServerSalt());
+
+                        byte[] authKey = state.getAuthKey(dcId);
+                        if (authKey == null) {
+                            throw new TimeoutException();
+                        }
+
+                        proto = new MTProto(state.getMtProtoState(dcId), callback,
+                                new CallWrapper() {
+                                    @Override
+                                    public TLObject wrapObject(TLMethod srcRequest) {
+                                        // TODO: Implement
+                                        return new TLRequestInvokeWithLayer8(srcRequest);
+                                    }
+                                });
+
+                        TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
+
+                        doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
+
+                        state.setAuthenticated(dcId, true);
+
+                        streamingProtos.put(dcId, proto);
+
+                        return proto;
                     }
-
-                    authKey = state.getAuthKey(dcId);
-
-                    if (authKey == null) {
-                        throw new TimeoutException();
-                    }
-
-                    proto = new MTProto(new MemoryProtoState(authKey.getAuthKey(), dc.getIp(), dc.getPort()), callback,
-                            new CallWrapper() {
-                                @Override
-                                public TLObject wrapObject(TLMethod srcRequest) {
-                                    // TODO: Implement
-                                    return new TLRequestInvokeWithLayer8(srcRequest);
-                                }
-                            });
-
-                    TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
-
-                    doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
-
-                    streamingProtos.put(dcId, proto);
-
-                    return proto;
                 } else {
-                    AuthKey authKey = state.getAuthKey(dcId);
+                    byte[] authKey = state.getAuthKey(dcId);
                     if (authKey == null) {
                         throw new TimeoutException();
                     }
-                    proto = new MTProto(new MemoryProtoState(authKey.getAuthKey(), dc.getIp(), dc.getPort()), callback,
+                    proto = new MTProto(state.getMtProtoState(dcId), callback,
                             new CallWrapper() {
                                 @Override
                                 public TLObject wrapObject(TLMethod srcRequest) {
@@ -202,14 +253,6 @@ public class TelegramApi {
             }
             return proto;
         }
-    }
-
-    public void markAuthenticated() {
-        isAuthenticated = true;
-    }
-
-    public boolean isAuthenticated() {
-        return isAuthenticated;
     }
 
     public int getPrimaryDc() {
@@ -347,6 +390,7 @@ public class TelegramApi {
             isRegisteredInApi = true;
             try {
                 TLObject object = apiContext.deserializeMessage(message);
+                onMessageArrived(object);
             } catch (Throwable t) {
                 t.printStackTrace();
             }
