@@ -500,6 +500,8 @@ public class TelegramApi {
                         }
                         continue;
                     }
+
+                    timeoutTimes.remove(entry.getKey());
                 }
 
                 RpcCallback currentCallback;
