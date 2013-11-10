@@ -3,7 +3,6 @@ package org.telegram.api.engine;
 import org.telegram.api.TLAbsUpdates;
 import org.telegram.api.TLApiContext;
 import org.telegram.api.TLConfig;
-import org.telegram.api.TLDcOption;
 import org.telegram.api.auth.TLExportedAuthorization;
 import org.telegram.api.engine.storage.AbsApiState;
 import org.telegram.api.requests.*;
@@ -14,17 +13,13 @@ import org.telegram.mtproto.MTProtoCallback;
 import org.telegram.mtproto.pq.Authorizer;
 import org.telegram.mtproto.pq.PqAuth;
 import org.telegram.mtproto.state.ConnectionInfo;
-import org.telegram.mtproto.state.MemoryProtoState;
 import org.telegram.tl.TLBool;
 import org.telegram.tl.TLBoolTrue;
 import org.telegram.tl.TLMethod;
 import org.telegram.tl.TLObject;
-import sun.plugin.dom.exception.InvalidStateException;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * Created with IntelliJ IDEA.
@@ -50,7 +45,7 @@ public class TelegramApi {
 
     private ProtoCallback callback;
 
-    private final HashMap<Integer, RpcCallback> callbacks = new HashMap<Integer, RpcCallback>();
+    private final HashMap<Integer, RpcCallbackWrapper> callbacks = new HashMap<Integer, RpcCallbackWrapper>();
     private final HashMap<Integer, TLMethod> requestedMethods = new HashMap<Integer, TLMethod>();
 
     private TLApiContext apiContext;
@@ -58,14 +53,16 @@ public class TelegramApi {
     private CallbackThread timeoutThread;
     private final TreeMap<Long, Integer> timeoutTimes = new TreeMap<Long, Integer>();
 
-    private boolean isRegisteredInApi = false;
+    private HashSet<Integer> registeredInApi = new HashSet<Integer>();
 
     private AbsApiState state;
+    private AppInfo appInfo;
 
-    public TelegramApi(AbsApiState state) {
+    public TelegramApi(AbsApiState state, AppInfo _appInfo) {
         if (state.getAuthKey(state.getPrimaryDc()) == null) {
-            throw new InvalidStateException("ApiState might be in authenticated state for primaryDc");
+            throw new RuntimeException("ApiState might be in authenticated state for primaryDc");
         }
+        this.appInfo = _appInfo;
         this.state = state;
         this.primaryDc = state.getPrimaryDc();
         this.callback = new ProtoCallback();
@@ -74,21 +71,22 @@ public class TelegramApi {
         this.timeoutThread = new CallbackThread();
         this.timeoutThread.start();
 
-        byte[] key = state.getAuthKey(primaryDc);
-        ConnectionInfo dc = state.getConnectionInfo(primaryDc);
-
         mainProto = new MTProto(state.getMtProtoState(primaryDc), callback,
                 new CallWrapper() {
                     @Override
                     public TLObject wrapObject(TLMethod srcRequest) {
-                        if (isRegisteredInApi) {
-                            return new TLRequestInvokeWithLayer9(srcRequest);
-                        }
-
-                        return new TLRequestInvokeWithLayer9(new TLRequestInitConnection(
-                                5, "Unkwnon", "10.8.9", "1.0", "ru", srcRequest));
+                        return wrapForDc(primaryDc, srcRequest);
                     }
                 });
+    }
+
+    private TLMethod wrapForDc(int dcId, TLMethod method) {
+        if (registeredInApi.contains(dcId)) {
+            return new TLRequestInvokeWithLayer9(method);
+        }
+
+        return new TLRequestInvokeWithLayer9(new TLRequestInitConnection(
+                appInfo.getApiId(), appInfo.getDeviceModel(), appInfo.getSystemVersion(), appInfo.getAppVersion(), appInfo.getLangCode(), method));
     }
 
     public AbsApiState getState() {
@@ -105,10 +103,6 @@ public class TelegramApi {
 
     public TLApiContext getApiContext() {
         return apiContext;
-    }
-
-    public MTProto getMainProto() {
-        return mainProto;
     }
 
     protected void onMessageArrived(TLObject object) {
@@ -132,7 +126,7 @@ public class TelegramApi {
         return doRpcCall(new TLRequestUploadGetFile(_location, _offset, _limit), FILE_TIMEOUT, proto);
     }
 
-    private MTProto waitForStreaming(int dcId) throws IOException {
+    private MTProto waitForStreaming(final int dcId) throws IOException {
         if (isClosed) {
             throw new TimeoutException();
         }
@@ -186,8 +180,7 @@ public class TelegramApi {
                                 new CallWrapper() {
                                     @Override
                                     public TLObject wrapObject(TLMethod srcRequest) {
-                                        // TODO: Implement
-                                        return new TLRequestInvokeWithLayer8(srcRequest);
+                                        return wrapForDc(dcId, srcRequest);
                                     }
                                 });
 
@@ -206,9 +199,7 @@ public class TelegramApi {
                         }
                         state.putAuthKey(dcId, auth.getAuthKey());
                         state.setAuthenticated(dcId, false);
-
-                        // TODO: write server salt
-                        // state.putNewAuthKey(dcId, auth.getAuthKey(), new byte[8], auth.getServerSalt());
+                        state.getMtProtoState(dcId).initialServerSalt(auth.getServerSalt());
 
                         byte[] authKey = state.getAuthKey(dcId);
                         if (authKey == null) {
@@ -219,8 +210,7 @@ public class TelegramApi {
                                 new CallWrapper() {
                                     @Override
                                     public TLObject wrapObject(TLMethod srcRequest) {
-                                        // TODO: Implement
-                                        return new TLRequestInvokeWithLayer8(srcRequest);
+                                        return wrapForDc(dcId, srcRequest);
                                     }
                                 });
 
@@ -243,8 +233,7 @@ public class TelegramApi {
                             new CallWrapper() {
                                 @Override
                                 public TLObject wrapObject(TLMethod srcRequest) {
-                                    // TODO: Implement
-                                    return new TLRequestInvokeWithLayer8(srcRequest);
+                                    return wrapForDc(dcId, srcRequest);
                                 }
                             });
                     streamingProtos.put(dcId, proto);
@@ -290,9 +279,10 @@ public class TelegramApi {
             return;
         }
         synchronized (callbacks) {
-            int rpcId = destProto.sendRpcMessage(method, DEFAULT_TIMEOUT);
+            boolean isHighPriority = callback != null && callback instanceof RpcCallbackEx;
+            int rpcId = destProto.sendRpcMessage(method, DEFAULT_TIMEOUT, isHighPriority);
             if (callback != null) {
-                callbacks.put(rpcId, callback);
+                callbacks.put(rpcId, new RpcCallbackWrapper(callback));
                 requestedMethods.put(rpcId, method);
                 long timeoutTime = System.nanoTime() + timeout * 1000 * 1000L;
                 synchronized (timeoutTimes) {
@@ -374,7 +364,17 @@ public class TelegramApi {
             if (isClosed) {
                 return;
             }
-            isRegisteredInApi = true;
+
+            if (proto == mainProto) {
+                registeredInApi.add(primaryDc);
+            } else {
+                for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                    if (p.getValue() == proto) {
+                        registeredInApi.add(p.getKey());
+                        return;
+                    }
+                }
+            }
         }
 
         @Override
@@ -387,7 +387,18 @@ public class TelegramApi {
             if (isClosed) {
                 return;
             }
-            isRegisteredInApi = true;
+
+            if (proto == mainProto) {
+                registeredInApi.add(primaryDc);
+            } else {
+                for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                    if (p.getValue() == proto) {
+                        registeredInApi.add(p.getKey());
+                        return;
+                    }
+                }
+            }
+
             try {
                 TLObject object = apiContext.deserializeMessage(message);
                 onMessageArrived(object);
@@ -401,9 +412,20 @@ public class TelegramApi {
             if (isClosed) {
                 return;
             }
-            isRegisteredInApi = true;
+
+            if (proto == mainProto) {
+                registeredInApi.add(primaryDc);
+            } else {
+                for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                    if (p.getValue() == proto) {
+                        registeredInApi.add(p.getKey());
+                        return;
+                    }
+                }
+            }
+
             try {
-                RpcCallback currentCallback;
+                RpcCallbackWrapper currentCallback;
                 TLMethod method;
                 synchronized (callbacks) {
                     currentCallback = callbacks.remove(callId);
@@ -411,7 +433,14 @@ public class TelegramApi {
                 }
                 if (currentCallback != null && method != null) {
                     TLObject object = method.deserializeResponse(response, apiContext);
-                    currentCallback.onResult(object);
+                    synchronized (currentCallback) {
+                        if (currentCallback.isCompleted) {
+                            return;
+                        } else {
+                            currentCallback.isCompleted = true;
+                        }
+                    }
+                    currentCallback.callback.onResult(object);
                 }
             } catch (Throwable t) {
                 t.printStackTrace();
@@ -425,21 +454,35 @@ public class TelegramApi {
             }
 
             if (errorCode == 400 && message != null && message.startsWith("CONNECTION_NOT_INITED")) {
-
                 System.out.println("Error: CONNECTION_NOT_INITED");
 
-                isRegisteredInApi = false;
-                RpcCallback currentCallback;
+                int dc = -1;
+                if (proto == mainProto) {
+                    dc = primaryDc;
+                } else {
+                    for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                        if (p.getValue() == proto) {
+                            dc = p.getKey();
+                            break;
+                        }
+                    }
+                }
+
+                if (dc < 0) {
+                    return;
+                }
+
+                registeredInApi.remove(dc);
+                RpcCallbackWrapper currentCallback;
                 TLMethod method;
                 synchronized (callbacks) {
                     currentCallback = callbacks.remove(callId);
                     method = requestedMethods.remove(callId);
                 }
 
-
                 if (currentCallback != null && method != null) {
                     // Incorrect timeouts, but this is unreal case and we might at least continue working
-                    int rpcId = mainProto.sendRpcMessage(method, DEFAULT_TIMEOUT);
+                    int rpcId = proto.sendRpcMessage(method, DEFAULT_TIMEOUT, false);
                     callbacks.put(rpcId, currentCallback);
                     requestedMethods.put(rpcId, method);
                     long timeoutTime = System.nanoTime() + DEFAULT_TIMEOUT * 1000 * 1000L;
@@ -453,21 +496,57 @@ public class TelegramApi {
                 }
                 return;
             } else {
-                isRegisteredInApi = true;
+                if (proto == mainProto) {
+                    registeredInApi.add(primaryDc);
+                } else {
+                    for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                        if (p.getValue() == proto) {
+                            registeredInApi.add(p.getKey());
+                            return;
+                        }
+                    }
+                }
             }
 
             try {
-                RpcCallback currentCallback;
+                RpcCallbackWrapper currentCallback;
                 TLMethod method;
                 synchronized (callbacks) {
                     currentCallback = callbacks.remove(callId);
                     method = requestedMethods.remove(callId);
                 }
                 if (currentCallback != null) {
-                    currentCallback.onError(errorCode, message);
+                    synchronized (currentCallback) {
+                        if (currentCallback.isCompleted) {
+                            return;
+                        } else {
+                            currentCallback.isCompleted = true;
+                        }
+                    }
+                    currentCallback.callback.onError(errorCode, message);
                 }
             } catch (Throwable t) {
                 t.printStackTrace();
+            }
+        }
+
+        @Override
+        public void onConfirmed(int callId) {
+            RpcCallbackWrapper currentCallback;
+            synchronized (callbacks) {
+                currentCallback = callbacks.get(callId);
+            }
+            if (currentCallback != null) {
+                synchronized (currentCallback) {
+                    if (currentCallback.isCompleted || currentCallback.isConfirmed) {
+                        return;
+                    } else {
+                        currentCallback.isConfirmed = true;
+                    }
+                }
+                if (currentCallback.callback instanceof RpcCallbackEx) {
+                    ((RpcCallbackEx) currentCallback.callback).onConfirmed();
+                }
             }
         }
     }
@@ -504,25 +583,49 @@ public class TelegramApi {
                     timeoutTimes.remove(entry.getKey());
                 }
 
-                RpcCallback currentCallback;
+                RpcCallbackWrapper currentCallback;
                 synchronized (callbacks) {
                     currentCallback = callbacks.remove(entry.getValue());
                 }
                 if (currentCallback != null) {
-                    currentCallback.onError(0, null);
+                    synchronized (currentCallback) {
+                        if (currentCallback.isCompleted) {
+                            return;
+                        } else {
+                            currentCallback.isCompleted = true;
+                        }
+                    }
+                    currentCallback.callback.onError(0, null);
                 }
             }
             synchronized (timeoutTimes) {
                 for (Map.Entry<Long, Integer> entry : timeoutTimes.entrySet()) {
-                    RpcCallback currentCallback;
+                    RpcCallbackWrapper currentCallback;
                     synchronized (callbacks) {
                         currentCallback = callbacks.remove(entry.getValue());
                     }
                     if (currentCallback != null) {
-                        currentCallback.onError(0, null);
+                        synchronized (currentCallback) {
+                            if (currentCallback.isCompleted) {
+                                return;
+                            } else {
+                                currentCallback.isCompleted = true;
+                            }
+                        }
+                        currentCallback.callback.onError(0, null);
                     }
                 }
             }
+        }
+    }
+
+    private class RpcCallbackWrapper {
+        public boolean isCompleted = false;
+        public boolean isConfirmed = false;
+        public RpcCallback callback;
+
+        private RpcCallbackWrapper(RpcCallback callback) {
+            this.callback = callback;
         }
     }
 }
