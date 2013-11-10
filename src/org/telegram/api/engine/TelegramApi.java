@@ -10,6 +10,7 @@ import org.telegram.api.upload.TLFile;
 import org.telegram.mtproto.CallWrapper;
 import org.telegram.mtproto.MTProto;
 import org.telegram.mtproto.MTProtoCallback;
+import org.telegram.mtproto.log.Logger;
 import org.telegram.mtproto.pq.Authorizer;
 import org.telegram.mtproto.pq.PqAuth;
 import org.telegram.mtproto.state.ConnectionInfo;
@@ -28,6 +29,9 @@ import java.util.*;
  * Time: 21:54
  */
 public class TelegramApi {
+
+    private static final String TAG = "TelegramApi";
+
     private static final int DEFAULT_TIMEOUT_CHECK = 15000;
     private static final int DEFAULT_TIMEOUT = 15000;
     private static final int FILE_TIMEOUT = 45000;
@@ -559,6 +563,7 @@ public class TelegramApi {
         @Override
         public void run() {
             while (!isClosed) {
+                Logger.d(TAG, "Callback Iteration");
                 Map.Entry<Long, Integer> entry = null;
                 synchronized (timeoutTimes) {
                     entry = timeoutTimes.firstEntry();
