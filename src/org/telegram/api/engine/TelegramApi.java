@@ -10,7 +10,6 @@ import org.telegram.api.upload.TLFile;
 import org.telegram.mtproto.CallWrapper;
 import org.telegram.mtproto.MTProto;
 import org.telegram.mtproto.MTProtoCallback;
-import org.telegram.mtproto.log.Logger;
 import org.telegram.mtproto.pq.Authorizer;
 import org.telegram.mtproto.pq.PqAuth;
 import org.telegram.mtproto.state.ConnectionInfo;
@@ -21,6 +20,7 @@ import org.telegram.tl.TLObject;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created with IntelliJ IDEA.
@@ -30,7 +30,11 @@ import java.util.*;
  */
 public class TelegramApi {
 
-    private static final String TAG = "TelegramApi";
+    private static final AtomicInteger instanceIndex = new AtomicInteger(1000);
+
+    private final String TAG;
+
+    private final int INSTANCE_INDEX;
 
     private static final int DEFAULT_TIMEOUT_CHECK = 15000;
     private static final int DEFAULT_TIMEOUT = 15000;
@@ -54,7 +58,7 @@ public class TelegramApi {
 
     private TLApiContext apiContext;
 
-    private CallbackThread timeoutThread;
+    private TimeoutThread timeoutThread;
     private final TreeMap<Long, Integer> timeoutTimes = new TreeMap<Long, Integer>();
 
     private HashSet<Integer> registeredInApi = new HashSet<Integer>();
@@ -63,6 +67,9 @@ public class TelegramApi {
     private AppInfo appInfo;
 
     public TelegramApi(AbsApiState state, AppInfo _appInfo) {
+        this.INSTANCE_INDEX = instanceIndex.incrementAndGet();
+        this.TAG = "TelegramApi#" + INSTANCE_INDEX;
+
         if (state.getAuthKey(state.getPrimaryDc()) == null) {
             throw new RuntimeException("ApiState might be in authenticated state for primaryDc");
         }
@@ -72,7 +79,7 @@ public class TelegramApi {
         this.callback = new ProtoCallback();
         this.apiContext = new TLApiContext();
         this.isClosed = false;
-        this.timeoutThread = new CallbackThread();
+        this.timeoutThread = new TimeoutThread();
         this.timeoutThread.start();
 
         mainProto = new MTProto(state.getMtProtoState(primaryDc), callback,
@@ -82,6 +89,11 @@ public class TelegramApi {
                         return wrapForDc(primaryDc, srcRequest);
                     }
                 });
+    }
+
+    @Override
+    public String toString() {
+        return "api#" + INSTANCE_INDEX;
     }
 
     private TLMethod wrapForDc(int dcId, TLMethod method) {
@@ -131,11 +143,14 @@ public class TelegramApi {
     }
 
     private MTProto waitForStreaming(final int dcId) throws IOException {
+        Logger.d(TAG, "waitForStreaming" + dcId);
         if (isClosed) {
+            Logger.w(TAG, "#" + dcId + ": Api is closed");
             throw new TimeoutException();
         }
 
         if (!state.isAuthenticated(primaryDc)) {
+            Logger.w(TAG, "#" + dcId + ": Dc is not authenticated");
             throw new TimeoutException();
         }
 
@@ -154,6 +169,7 @@ public class TelegramApi {
                 proto = streamingProtos.get(dcId);
                 if (proto != null) {
                     if (proto.isClosed()) {
+                        Logger.d(TAG, "#" + dcId + "proto removed because of death");
                         streamingProtos.remove(dcId);
                         proto = null;
                     }
@@ -161,20 +177,22 @@ public class TelegramApi {
             }
 
             if (proto == null) {
+                Logger.d(TAG, "#" + dcId + ": Creating proto for dc");
                 ConnectionInfo connectionInfo = state.getConnectionInfo(dcId);
 
                 if (connectionInfo == null) {
+                    Logger.w(TAG, "#" + dcId + ": Unable to find proper dc config");
                     TLConfig config = doRpcCall(new TLRequestHelpGetConfig());
                     state.updateSettings(config);
                     connectionInfo = state.getConnectionInfo(dcId);
                 }
 
                 if (connectionInfo == null) {
+                    Logger.w(TAG, "#" + dcId + ": Still unable to find proper dc config");
                     throw new TimeoutException();
                 }
 
                 if (dcId != primaryDc) {
-
                     if (state.isAuthenticated(dcId)) {
                         byte[] authKey = state.getAuthKey(dcId);
                         if (authKey == null) {
@@ -196,9 +214,11 @@ public class TelegramApi {
                         streamingProtos.put(dcId, proto);
                         return proto;
                     } else {
+                        Logger.w(TAG, "#" + dcId + ": Creating key");
                         Authorizer authorizer = new Authorizer();
                         PqAuth auth = authorizer.doAuth(connectionInfo.getAddress(), connectionInfo.getPort());
                         if (auth == null) {
+                            Logger.w(TAG, "#" + dcId + ": Timed out");
                             throw new TimeoutException();
                         }
                         state.putAuthKey(dcId, auth.getAuthKey());
@@ -207,6 +227,7 @@ public class TelegramApi {
 
                         byte[] authKey = state.getAuthKey(dcId);
                         if (authKey == null) {
+                            Logger.w(TAG, "#" + dcId + ": auth key == null");
                             throw new TimeoutException();
                         }
 
@@ -218,8 +239,10 @@ public class TelegramApi {
                                     }
                                 });
 
+                        Logger.w(TAG, "#" + dcId + ": exporting auth");
                         TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
 
+                        Logger.w(TAG, "#" + dcId + ": importing auth");
                         doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
 
                         state.setAuthenticated(dcId, true);
@@ -243,8 +266,10 @@ public class TelegramApi {
                     streamingProtos.put(dcId, proto);
                     return proto;
                 }
+            } else {
+                Logger.w(TAG, "#" + dcId + ": returning proper proto");
+                return proto;
             }
-            return proto;
         }
     }
 
@@ -375,10 +400,12 @@ public class TelegramApi {
                 for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
                     if (p.getValue() == proto) {
                         registeredInApi.add(p.getKey());
-                        return;
+                        break;
                     }
                 }
             }
+
+            Logger.w(TAG, proto.toString() + ": onSessionCreated");
         }
 
         @Override
@@ -398,7 +425,7 @@ public class TelegramApi {
                 for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
                     if (p.getValue() == proto) {
                         registeredInApi.add(p.getKey());
-                        return;
+                        break;
                     }
                 }
             }
@@ -423,7 +450,7 @@ public class TelegramApi {
                 for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
                     if (p.getValue() == proto) {
                         registeredInApi.add(p.getKey());
-                        return;
+                        break;
                     }
                 }
             }
@@ -439,11 +466,13 @@ public class TelegramApi {
                     TLObject object = method.deserializeResponse(response, apiContext);
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
+                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Result: " + object);
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
+                    Logger.d(TAG, proto.toString() + "| RPC #" + callId + ": Result " + object);
                     currentCallback.callback.onResult(object);
                 }
             } catch (Throwable t) {
@@ -458,7 +487,7 @@ public class TelegramApi {
             }
 
             if (errorCode == 400 && message != null && message.startsWith("CONNECTION_NOT_INITED")) {
-                System.out.println("Error: CONNECTION_NOT_INITED");
+                Logger.w(TAG, proto + ": (!)Error #400 CONNECTION_NOT_INITED");
 
                 int dc = -1;
                 if (proto == mainProto) {
@@ -506,7 +535,7 @@ public class TelegramApi {
                     for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
                         if (p.getValue() == proto) {
                             registeredInApi.add(p.getKey());
-                            return;
+                            break;
                         }
                     }
                 }
@@ -522,11 +551,13 @@ public class TelegramApi {
                 if (currentCallback != null) {
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
+                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Error #" + errorCode + " " + message);
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
+                    Logger.w(TAG, proto + "| RPC #" + callId + ": Error #" + errorCode + " " + message);
                     currentCallback.callback.onError(errorCode, message);
                 }
             } catch (Throwable t) {
@@ -555,9 +586,9 @@ public class TelegramApi {
         }
     }
 
-    private class CallbackThread extends Thread {
-        public CallbackThread() {
-            setName("Callback#" + hashCode());
+    private class TimeoutThread extends Thread {
+        public TimeoutThread() {
+            setName("Timeout#" + hashCode());
         }
 
         @Override
@@ -595,11 +626,13 @@ public class TelegramApi {
                 if (currentCallback != null) {
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
+                            Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout ignored");
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
+                    Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout");
                     currentCallback.callback.onError(0, null);
                 }
             }
@@ -617,6 +650,7 @@ public class TelegramApi {
                                 currentCallback.isCompleted = true;
                             }
                         }
+                        Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout");
                         currentCallback.callback.onError(0, null);
                     }
                 }
