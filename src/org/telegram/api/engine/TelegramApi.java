@@ -310,8 +310,10 @@ public class TelegramApi {
         synchronized (callbacks) {
             boolean isHighPriority = callback != null && callback instanceof RpcCallbackEx;
             int rpcId = destProto.sendRpcMessage(method, DEFAULT_TIMEOUT, isHighPriority);
+            Logger.d(TAG, "RPC #" + rpcId + ": " + method);
             if (callback != null) {
-                callbacks.put(rpcId, new RpcCallbackWrapper(callback));
+                RpcCallbackWrapper wrapper = new RpcCallbackWrapper(callback);
+                callbacks.put(rpcId, wrapper);
                 requestedMethods.put(rpcId, method);
                 long timeoutTime = System.nanoTime() + timeout * 1000 * 1000L;
                 synchronized (timeoutTimes) {
@@ -321,6 +323,7 @@ public class TelegramApi {
                     timeoutTimes.put(timeoutTime, rpcId);
                     timeoutTimes.notifyAll();
                 }
+                wrapper.timeoutTime = timeoutTime;
             }
         }
     }
@@ -466,13 +469,14 @@ public class TelegramApi {
                     TLObject object = method.deserializeResponse(response, apiContext);
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
-                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Result: " + object);
+                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Result: " + object + " (" + currentCallback.elapsed() + " ms)");
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
-                    Logger.d(TAG, proto.toString() + "| RPC #" + callId + ": Result " + object);
+                    Logger.d(TAG, proto.toString() + "| RPC #" + callId + ": Result " + object + " (" + currentCallback.elapsed() + " ms)");
+                    timeoutTimes.remove(currentCallback.timeoutTime);
                     currentCallback.callback.onResult(object);
                 }
             } catch (Throwable t) {
@@ -514,6 +518,8 @@ public class TelegramApi {
                 }
 
                 if (currentCallback != null && method != null) {
+                    timeoutTimes.remove(currentCallback.timeoutTime);
+
                     // Incorrect timeouts, but this is unreal case and we might at least continue working
                     int rpcId = proto.sendRpcMessage(method, DEFAULT_TIMEOUT, false);
                     callbacks.put(rpcId, currentCallback);
@@ -526,6 +532,7 @@ public class TelegramApi {
                         timeoutTimes.put(timeoutTime, rpcId);
                         timeoutTimes.notifyAll();
                     }
+                    currentCallback.timeoutTime = timeoutTime;
                 }
                 return;
             } else {
@@ -551,13 +558,14 @@ public class TelegramApi {
                 if (currentCallback != null) {
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
-                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Error #" + errorCode + " " + message);
+                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Error #" + errorCode + " " + message + " (" + currentCallback.elapsed() + " ms)");
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
-                    Logger.w(TAG, proto + "| RPC #" + callId + ": Error #" + errorCode + " " + message);
+                    Logger.w(TAG, proto + "| RPC #" + callId + ": Error #" + errorCode + " " + message + " (" + currentCallback.elapsed() + " ms)");
+                    timeoutTimes.remove(currentCallback.timeoutTime);
                     currentCallback.callback.onError(errorCode, message);
                 }
             } catch (Throwable t) {
@@ -594,7 +602,7 @@ public class TelegramApi {
         @Override
         public void run() {
             while (!isClosed) {
-                Logger.d(TAG, "Callback Iteration");
+                Logger.d(TAG, "Timeout Iteration");
                 Map.Entry<Long, Integer> entry = null;
                 synchronized (timeoutTimes) {
                     entry = timeoutTimes.firstEntry();
@@ -632,8 +640,10 @@ public class TelegramApi {
                             currentCallback.isCompleted = true;
                         }
                     }
-                    Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout");
+                    Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout (" + currentCallback.elapsed() + " ms)");
                     currentCallback.callback.onError(0, null);
+                } else {
+                    Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout ignored2");
                 }
             }
             synchronized (timeoutTimes) {
@@ -650,7 +660,7 @@ public class TelegramApi {
                                 currentCallback.isCompleted = true;
                             }
                         }
-                        Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout");
+                        Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout (" + currentCallback.elapsed() + " ms)");
                         currentCallback.callback.onError(0, null);
                     }
                 }
@@ -659,12 +669,18 @@ public class TelegramApi {
     }
 
     private class RpcCallbackWrapper {
+        public long requestTime = System.currentTimeMillis();
         public boolean isCompleted = false;
         public boolean isConfirmed = false;
         public RpcCallback callback;
+        public long timeoutTime;
 
         private RpcCallbackWrapper(RpcCallback callback) {
             this.callback = callback;
+        }
+
+        public long elapsed() {
+            return System.currentTimeMillis() - requestTime;
         }
     }
 }
