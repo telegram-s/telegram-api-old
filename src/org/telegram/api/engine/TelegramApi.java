@@ -66,13 +66,16 @@ public class TelegramApi {
     private AbsApiState state;
     private AppInfo appInfo;
 
-    public TelegramApi(AbsApiState state, AppInfo _appInfo) {
+    private ApiCallback apiCallback;
+
+    public TelegramApi(AbsApiState state, AppInfo _appInfo, ApiCallback _apiCallback) {
         this.INSTANCE_INDEX = instanceIndex.incrementAndGet();
         this.TAG = "TelegramApi#" + INSTANCE_INDEX;
 
         if (state.getAuthKey(state.getPrimaryDc()) == null) {
             throw new RuntimeException("ApiState might be in authenticated state for primaryDc");
         }
+        this.apiCallback = _apiCallback;
         this.appInfo = _appInfo;
         this.state = state;
         this.primaryDc = state.getPrimaryDc();
@@ -283,6 +286,7 @@ public class TelegramApi {
 
     public void close() {
         if (!this.isClosed) {
+            apiCallback.onApiDies(this);
             this.isClosed = true;
             if (this.timeoutThread != null) {
                 this.timeoutThread.interrupt();
@@ -413,7 +417,24 @@ public class TelegramApi {
 
         @Override
         public void onAuthInvalidated(MTProto proto) {
-            close();
+            if (isClosed) {
+                return;
+            }
+
+            if (proto == mainProto) {
+                close();
+            } else {
+                synchronized (streamingProtos) {
+                    for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                        if (p.getValue() == proto) {
+                            state.setAuthenticated(p.getKey(), false);
+                            streamingProtos.remove(p.getKey());
+                            break;
+                        }
+                    }
+                }
+            }
+            // close();
         }
 
         @Override
