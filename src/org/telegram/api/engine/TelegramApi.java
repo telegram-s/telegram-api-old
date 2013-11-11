@@ -401,6 +401,8 @@ public class TelegramApi {
                 return;
             }
 
+            Logger.w(TAG, proto + ": onSessionCreated");
+
             if (proto == mainProto) {
                 registeredInApi.add(primaryDc);
             } else {
@@ -412,7 +414,7 @@ public class TelegramApi {
                 }
             }
 
-            Logger.w(TAG, proto.toString() + ": onSessionCreated");
+            apiCallback.onUpdatesInvalidated(TelegramApi.this);
         }
 
         @Override

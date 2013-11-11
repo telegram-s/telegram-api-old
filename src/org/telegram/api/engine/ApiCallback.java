@@ -8,4 +8,6 @@ package org.telegram.api.engine;
  */
 public interface ApiCallback {
     public void onApiDies(TelegramApi api);
+
+    public void onUpdatesInvalidated(TelegramApi api);
 }
