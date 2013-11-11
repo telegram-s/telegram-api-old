@@ -146,7 +146,7 @@ public class TelegramApi {
     }
 
     private MTProto waitForStreaming(final int dcId) throws IOException {
-        Logger.d(TAG, "waitForStreaming" + dcId);
+        Logger.d(TAG, "#" + dcId + ": waitForStreaming");
         if (isClosed) {
             Logger.w(TAG, "#" + dcId + ": Api is closed");
             throw new TimeoutException();

@@ -1,0 +1,25 @@
+def basicVersion = '1.0'
+
+if (project.hasProperty('buildIndex')) {
+     project.version = basicVersion + '.' + project.buildIndex
+} else {
+     project.version = basicVersion + '-SNAPSHOT'
+}
+
+project.group = "org.telegram"
+
+apply plugin: 'java'
+apply plugin: 'maven'
+
+dependencies {
+    compile "org.telegram:tl-core:1.0.10"
+    compile "org.telegram:mtproto:1.0.10"
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: "http://192.168.1.12:8080/archiva/repository/internal/")
+        }
+    }
+}
