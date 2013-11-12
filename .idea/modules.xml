@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/../MTProto/MTProto.iml" filepath="$PROJECT_DIR$/../MTProto/MTProto.iml" />
       <module fileurl="file://$PROJECT_DIR$/TelegramApi.iml" filepath="$PROJECT_DIR$/TelegramApi.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../MTProto/mtproto.iml" filepath="$PROJECT_DIR$/../MTProto/mtproto.iml" />
     </modules>
   </component>
 </project>

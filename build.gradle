@@ -17,9 +17,9 @@ project.group = "org.telegram"
 apply plugin: 'java'
 
 dependencies {
-    compile "org.telegram:tl-core:1.0.13"
-    compile "org.telegram:mtproto:1.0.10"
-    compile "org.telegram:tl-api-9:1.0.9"
+    compile "org.telegram:tl-core:1.0.+"
+    compile "org.telegram:mtproto:1.0.+"
+    compile "org.telegram:tl-api-9:1.0.+"
 }
 
 apply plugin: 'maven'
