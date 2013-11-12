@@ -7,9 +7,9 @@ repositories {
 def basicVersion = '1.0'
 
 if (project.hasProperty('buildIndex')) {
-     project.version = basicVersion + '.' + project.buildIndex
+    project.version = basicVersion + '.' + project.buildIndex
 } else {
-     project.version = basicVersion + '-SNAPSHOT'
+    project.version = basicVersion + '-SNAPSHOT'
 }
 
 project.group = "org.telegram"
@@ -20,6 +20,10 @@ dependencies {
     compile "org.telegram:tl-core:1.0.+"
     compile "org.telegram:mtproto:1.0.+"
     compile "org.telegram:tl-api-9:1.0.+"
+}
+
+configurations.all {
+    resolutionStrategy.cacheDynamicVersionsFor 1, 'minutes'
 }
 
 apply plugin: 'maven'
