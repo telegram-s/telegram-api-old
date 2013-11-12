@@ -1,9 +1,3 @@
-repositories {
-    maven {
-        url "http://192.168.1.12:8080/archiva/repository/internal/"
-    }
-}
-
 def basicVersion = '1.0'
 
 if (project.hasProperty('buildIndex')) {
@@ -17,21 +11,7 @@ project.group = "org.telegram"
 apply plugin: 'java'
 
 dependencies {
-    compile "org.telegram:tl-core:1.0.+"
-    compile "org.telegram:mtproto:1.0.+"
-    compile "org.telegram:tl-api-9:1.0.+"
-}
-
-configurations.all {
-    resolutionStrategy.cacheDynamicVersionsFor 1, 'minutes'
-}
-
-apply plugin: 'maven'
-
-uploadArchives {
-    repositories {
-        mavenDeployer {
-            repository(url: "http://192.168.1.12:8080/archiva/repository/internal/")
-        }
-    }
+    compile project(':tl-core')
+    compile project(':mtproto')
+    compile files('libs/tl-api-v9.jar')
 }
