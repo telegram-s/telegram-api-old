@@ -626,10 +626,11 @@ public class TelegramApi {
         public void run() {
             while (!isClosed) {
                 Logger.d(TAG, "Timeout Iteration");
-                Map.Entry<Long, Integer> entry = null;
+                Long key = null;
+                Integer id = null;
                 synchronized (timeoutTimes) {
-                    entry = timeoutTimes.firstEntry();
-                    if (entry == null) {
+                    key = timeoutTimes.firstKey();
+                    if (key == null) {
                         try {
                             timeoutTimes.wait(DEFAULT_TIMEOUT_CHECK);
                         } catch (InterruptedException e) {
@@ -637,7 +638,7 @@ public class TelegramApi {
                         }
                         continue;
                     }
-                    long delta = (entry.getKey() - System.nanoTime()) / (1000 * 1000);
+                    long delta = (key - System.nanoTime()) / (1000 * 1000);
                     if (delta > 0) {
                         try {
                             timeoutTimes.wait(delta);
@@ -647,26 +648,29 @@ public class TelegramApi {
                         continue;
                     }
 
-                    timeoutTimes.remove(entry.getKey());
+                    id = timeoutTimes.remove(key);
+                    if (id == null) {
+                        continue;
+                    }
                 }
 
                 RpcCallbackWrapper currentCallback;
                 synchronized (callbacks) {
-                    currentCallback = callbacks.remove(entry.getValue());
+                    currentCallback = callbacks.remove(id);
                 }
                 if (currentCallback != null) {
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
-                            Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout ignored");
+                            Logger.d(TAG, "RPC #" + id + ": Timeout ignored");
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
-                    Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout (" + currentCallback.elapsed() + " ms)");
+                    Logger.d(TAG, "RPC #" + id + ": Timeout (" + currentCallback.elapsed() + " ms)");
                     currentCallback.callback.onError(0, null);
                 } else {
-                    Logger.d(TAG, "RPC #" + entry.getValue() + ": Timeout ignored2");
+                    Logger.d(TAG, "RPC #" + id + ": Timeout ignored2");
                 }
             }
             synchronized (timeoutTimes) {
