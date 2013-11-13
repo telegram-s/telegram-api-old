@@ -629,7 +629,17 @@ public class TelegramApi {
                 Long key = null;
                 Integer id = null;
                 synchronized (timeoutTimes) {
-                    key = timeoutTimes.firstKey();
+
+                    if (timeoutTimes.isEmpty()) {
+                        key = null;
+                    } else {
+                        try {
+                            key = timeoutTimes.firstKey();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+
                     if (key == null) {
                         try {
                             timeoutTimes.wait(DEFAULT_TIMEOUT_CHECK);
@@ -638,6 +648,7 @@ public class TelegramApi {
                         }
                         continue;
                     }
+
                     long delta = (key - System.nanoTime()) / (1000 * 1000);
                     if (delta > 0) {
                         try {
