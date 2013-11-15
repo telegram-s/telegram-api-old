@@ -92,6 +92,12 @@ api.doRpcCall(new TLRequestHelpGetConfig(), new RpcCallbackEx<TLConfig>()
     // errorCode == 0 if request timeouted  
   }
 });
+
+// File operations
+// Method that downloads file part. Automaticaly managed connections for file operations, automaticaly create keys for dc if there is no one.
+api.doGetFile(...)
+// Uploads file part
+api.doSaveFilePart(...)
 ```
 
 More information
@@ -124,4 +130,4 @@ Russian: http://dev.stel.com/mtproto/TL
 
 Licence
 ----------------
-Compiler uses [MIT Licence](LICENCE)
+Project uses [MIT Licence](LICENCE)
