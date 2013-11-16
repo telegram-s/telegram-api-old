@@ -46,8 +46,6 @@ public class TelegramApi {
 
     private MTProto mainProto;
 
-    private UpdateCatcher updateCatcher;
-
     private final HashMap<Integer, MTProto> streamingProtos = new HashMap<Integer, MTProto>();
     private final HashMap<Integer, Object> streamingSync = new HashMap<Integer, Object>();
 
@@ -112,23 +110,13 @@ public class TelegramApi {
         return state;
     }
 
-    public UpdateCatcher getUpdateCatcher() {
-        return updateCatcher;
-    }
-
-    public void setUpdateCatcher(UpdateCatcher updateCatcher) {
-        this.updateCatcher = updateCatcher;
-    }
-
     public TLApiContext getApiContext() {
         return apiContext;
     }
 
     protected void onMessageArrived(TLObject object) {
         if (object instanceof TLAbsUpdates) {
-            if (updateCatcher != null) {
-                updateCatcher.onUpdate((TLAbsUpdates) object);
-            }
+            apiCallback.onUpdate((TLAbsUpdates) object);
         } else {
 
         }

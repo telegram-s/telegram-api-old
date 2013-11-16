@@ -1,5 +1,7 @@
 package org.telegram.api.engine;
 
+import org.telegram.api.TLAbsUpdates;
+
 /**
  * Created with IntelliJ IDEA.
  * User: ex3ndr
@@ -10,4 +12,6 @@ public interface ApiCallback {
     public void onApiDies(TelegramApi api);
 
     public void onUpdatesInvalidated(TelegramApi api);
+
+    public void onUpdate(TLAbsUpdates updates);
 }
