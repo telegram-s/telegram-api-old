@@ -4,6 +4,7 @@ import org.telegram.api.TLAbsUpdates;
 import org.telegram.api.TLApiContext;
 import org.telegram.api.TLConfig;
 import org.telegram.api.auth.TLExportedAuthorization;
+import org.telegram.api.engine.file.Downloader;
 import org.telegram.api.engine.storage.AbsApiState;
 import org.telegram.api.requests.*;
 import org.telegram.api.upload.TLFile;
@@ -66,6 +67,8 @@ public class TelegramApi {
 
     private ApiCallback apiCallback;
 
+    private Downloader downloader;
+
     public TelegramApi(AbsApiState state, AppInfo _appInfo, ApiCallback _apiCallback) {
         this.INSTANCE_INDEX = instanceIndex.incrementAndGet();
         this.TAG = "TelegramApi#" + INSTANCE_INDEX;
@@ -83,13 +86,19 @@ public class TelegramApi {
         this.timeoutThread = new TimeoutThread();
         this.timeoutThread.start();
 
-        mainProto = new MTProto(state.getMtProtoState(primaryDc), callback,
+        this.mainProto = new MTProto(state.getMtProtoState(primaryDc), callback,
                 new CallWrapper() {
                     @Override
                     public TLObject wrapObject(TLMethod srcRequest) {
                         return wrapForDc(primaryDc, srcRequest);
                     }
                 });
+
+        this.downloader = new Downloader(this);
+    }
+
+    public Downloader getDownloader() {
+        return downloader;
     }
 
     @Override
