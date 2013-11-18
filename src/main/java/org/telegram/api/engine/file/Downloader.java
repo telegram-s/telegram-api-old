@@ -16,8 +16,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Created by ex3ndr on 18.11.13.
  */
 public class Downloader {
-    public static final long DOWNLOAD_TIMEOUT = 30 * 1000L;
-
     public static final int FILE_QUEUED = 0;
     public static final int FILE_DOWNLOADING = 1;
     public static final int FILE_COMPLETED = 2;
@@ -29,6 +27,8 @@ public class Downloader {
     private final String TAG;
 
     private TelegramApi api;
+
+    private static final long DOWNLOAD_TIMEOUT = 30 * 1000;
 
     private static final long DEFAULT_DELAY = 15 * 1000;
 
@@ -174,24 +174,32 @@ public class Downloader {
     }
 
     private synchronized void onTaskCompleted(DownloadTask task) {
-        Logger.d(TAG, "File #" + task.taskId + "| Completed in " + (System.nanoTime() - task.queueTime) / (1000 * 1000L) + " ms");
-        task.state = FILE_COMPLETED;
-        try {
-            task.file.close();
-            task.file = null;
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (task.state != FILE_COMPLETED) {
+            Logger.d(TAG, "File #" + task.taskId + "| Completed in " + (System.nanoTime() - task.queueTime) / (1000 * 1000L) + " ms");
+            task.state = FILE_COMPLETED;
+            try {
+                if (task.file != null) {
+                    task.file.close();
+                    task.file = null;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
     private synchronized void onTaskFailure(DownloadTask task) {
-        Logger.d(TAG, "File #" + task.taskId + "| Failure in " + (System.nanoTime() - task.queueTime) / (1000 * 1000L) + " ms");
-        task.state = FILE_FAILURE;
-        try {
-            task.file.close();
-            task.file = null;
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (task.state != FILE_FAILURE) {
+            Logger.d(TAG, "File #" + task.taskId + "| Failure in " + (System.nanoTime() - task.queueTime) / (1000 * 1000L) + " ms");
+            task.state = FILE_FAILURE;
+            try {
+                if (task.file != null) {
+                    task.file.close();
+                    task.file = null;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
