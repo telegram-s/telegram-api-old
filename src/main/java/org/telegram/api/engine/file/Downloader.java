@@ -78,7 +78,9 @@ public class Downloader {
         DownloadTask task = getTask(taskId);
         if (task != null && task.state != FILE_COMPLETED) {
             task.state = FILE_CANCELED;
+            Logger.d(TAG, "File #" + task.taskId + "| Canceled");
         }
+        updateFileQueueStates();
     }
 
     public synchronized int getTaskState(int taskId) {
