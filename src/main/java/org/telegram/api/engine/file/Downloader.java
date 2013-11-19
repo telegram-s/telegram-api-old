@@ -89,7 +89,24 @@ public class Downloader {
             return task.state;
         }
 
-        return 0;
+        return FILE_CANCELED;
+    }
+
+    public void waitForTask(int taskId) {
+        while (true) {
+            int state = getTaskState(taskId);
+            if ((state == FILE_COMPLETED) || (state == FILE_FAILURE) || (state == FILE_CANCELED)) {
+                return;
+            }
+            synchronized (threadLocker) {
+                try {
+                    threadLocker.wait(DEFAULT_DELAY);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    return;
+                }
+            }
+        }
     }
 
     public synchronized int requestTask(int dcId, TLAbsInputFileLocation location, int size, String destFile, DownloadListener listener) {
@@ -188,6 +205,7 @@ public class Downloader {
                 e.printStackTrace();
             }
         }
+        updateFileQueueStates();
     }
 
     private synchronized void onTaskFailure(DownloadTask task) {
@@ -203,6 +221,7 @@ public class Downloader {
                 e.printStackTrace();
             }
         }
+        updateFileQueueStates();
     }
 
     private synchronized DownloadTask fetchTask() {
@@ -248,10 +267,10 @@ public class Downloader {
             int downloadedCount = 0;
             for (DownloadBlock b : block.task.blocks) {
                 if (b.state == BLOCK_COMPLETED) {
-                    downloadedCount += b.task.blockSize;
+                    downloadedCount++;
                 }
             }
-            int percent = downloadedCount * 100 / block.task.size;
+            int percent = downloadedCount * 100 / block.task.blocks.length;
             block.task.listener.onPartDownloaded(percent, downloadedCount);
         }
         updateFileQueueStates();
