@@ -345,6 +345,15 @@ public class TelegramApi {
         }
     }
 
+    public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int dcId) throws IOException {
+        return doRpcCallToDc(method, DEFAULT_TIMEOUT, dcId);
+    }
+
+    public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int timeout, int dcId) throws IOException {
+        MTProto proto = waitForStreaming(dcId);
+        return doRpcCall(method, timeout, proto);
+    }
+
     public <T extends TLObject> T doRpcCall(TLMethod<T> method) throws IOException {
         return doRpcCall(method, DEFAULT_TIMEOUT);
     }
