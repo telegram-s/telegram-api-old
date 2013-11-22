@@ -301,6 +301,14 @@ public class TelegramApi {
         }
     }
 
+    public <T extends TLObject> void doRpcCallWeak(TLMethod<T> method) {
+        doRpcCallWeak(method, DEFAULT_TIMEOUT);
+    }
+
+    public <T extends TLObject> void doRpcCallWeak(TLMethod<T> method, int timeout) {
+        doRpcCall(method, timeout, (RpcCallback) null);
+    }
+
     public <T extends TLObject> void doRpcCall(TLMethod<T> method, RpcCallback<T> callback) {
         doRpcCall(method, DEFAULT_TIMEOUT, callback);
     }
