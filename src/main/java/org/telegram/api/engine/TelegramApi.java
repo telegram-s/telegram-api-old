@@ -318,7 +318,7 @@ public class TelegramApi {
         }
         synchronized (callbacks) {
             boolean isHighPriority = callback != null && callback instanceof RpcCallbackEx;
-            int rpcId = destProto.sendRpcMessage(method, DEFAULT_TIMEOUT, isHighPriority);
+            int rpcId = destProto.sendRpcMessage(method, timeout, isHighPriority);
             Logger.d(TAG, "RPC #" + rpcId + ": " + method);
             if (callback != null) {
                 RpcCallbackWrapper wrapper = new RpcCallbackWrapper(callback);
