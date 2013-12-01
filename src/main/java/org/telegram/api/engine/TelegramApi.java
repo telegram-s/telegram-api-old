@@ -368,10 +368,17 @@ public class TelegramApi {
         }
         final Object waitObj = new Object();
         final Object[] res = new Object[3];
+        final boolean[] completed = new boolean[1];
+        completed[0] = false;
+
         doRpcCall(method, timeout, new RpcCallback<T>() {
             @Override
             public void onResult(T result) {
                 synchronized (waitObj) {
+                    if (completed[0]) {
+                        return;
+                    }
+                    completed[0] = true;
                     res[0] = result;
                     res[1] = null;
                     res[2] = null;
@@ -382,6 +389,10 @@ public class TelegramApi {
             @Override
             public void onError(int errorCode, String message) {
                 synchronized (waitObj) {
+                    if (completed[0]) {
+                        return;
+                    }
+                    completed[0] = true;
                     res[0] = null;
                     res[1] = errorCode;
                     res[2] = message;
@@ -393,6 +404,7 @@ public class TelegramApi {
         synchronized (waitObj) {
             try {
                 waitObj.wait(timeout);
+                completed[0] = true;
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 throw new TimeoutException();
@@ -408,7 +420,7 @@ public class TelegramApi {
                     throw new RpcException(code, (String) res[2]);
                 }
             } else {
-                throw new RpcException(0, null);
+                throw new TimeoutException();
             }
         } else {
             return (T) res[0];
