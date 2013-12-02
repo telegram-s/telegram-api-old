@@ -38,6 +38,9 @@ public class TelegramApi {
 
     private final int INSTANCE_INDEX;
 
+    private static final int CHANNELS_MAIN = 1;
+    private static final int CHANNELS_FS = 2;
+
     private static final int DEFAULT_TIMEOUT_CHECK = 15000;
     private static final int DEFAULT_TIMEOUT = 15000;
     private static final int FILE_TIMEOUT = 45000;
@@ -95,7 +98,7 @@ public class TelegramApi {
                     public TLObject wrapObject(TLMethod srcRequest) {
                         return wrapForDc(primaryDc, srcRequest);
                     }
-                });
+                }, CHANNELS_MAIN);
 
         this.downloader = new Downloader(this);
         this.uploader = new Uploader(this);
@@ -212,7 +215,7 @@ public class TelegramApi {
                                     public TLObject wrapObject(TLMethod srcRequest) {
                                         return wrapForDc(dcId, srcRequest);
                                     }
-                                });
+                                }, CHANNELS_FS);
 
                         if (!state.isAuthenticated(dcId)) {
                             TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
@@ -245,7 +248,7 @@ public class TelegramApi {
                                     public TLObject wrapObject(TLMethod srcRequest) {
                                         return wrapForDc(dcId, srcRequest);
                                     }
-                                });
+                                }, CHANNELS_FS);
 
                         Logger.w(TAG, "#" + dcId + ": exporting auth");
                         TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
@@ -270,7 +273,7 @@ public class TelegramApi {
                                 public TLObject wrapObject(TLMethod srcRequest) {
                                     return wrapForDc(dcId, srcRequest);
                                 }
-                            });
+                            }, CHANNELS_FS);
                     streamingProtos.put(dcId, proto);
                     return proto;
                 }
