@@ -51,8 +51,8 @@ public class TelegramApi {
 
     private MTProto mainProto;
 
-    private final HashMap<Integer, MTProto> streamingProtos = new HashMap<Integer, MTProto>();
-    private final HashMap<Integer, Object> streamingSync = new HashMap<Integer, Object>();
+    private final HashMap<Integer, MTProto> dcProtos = new HashMap<Integer, MTProto>();
+    private final HashMap<Integer, Object> dcSync = new HashMap<Integer, Object>();
 
     private ProtoCallback callback;
 
@@ -142,152 +142,6 @@ public class TelegramApi {
         }
     }
 
-    public boolean doSaveFilePart(long _fileId, int _filePart, byte[] _bytes) throws IOException {
-        MTProto proto = waitForStreaming(primaryDc);
-        TLBool res = doRpcCall(new TLRequestUploadSaveFilePart(_fileId, _filePart, _bytes), FILE_TIMEOUT, proto);
-        return res instanceof TLBoolTrue;
-    }
-
-    public TLFile doGetFile(int dcId, org.telegram.api.TLAbsInputFileLocation _location, int _offset, int _limit) throws IOException {
-        MTProto proto = waitForStreaming(dcId);
-        return doRpcCall(new TLRequestUploadGetFile(_location, _offset, _limit), FILE_TIMEOUT, proto);
-    }
-
-    private MTProto waitForStreaming(final int dcId) throws IOException {
-        Logger.d(TAG, "#" + dcId + ": waitForStreaming");
-        if (isClosed) {
-            Logger.w(TAG, "#" + dcId + ": Api is closed");
-            throw new TimeoutException();
-        }
-
-        if (!state.isAuthenticated(primaryDc)) {
-            Logger.w(TAG, "#" + dcId + ": Dc is not authenticated");
-            throw new TimeoutException();
-        }
-
-        Object syncObj;
-        synchronized (streamingSync) {
-            syncObj = streamingSync.get(dcId);
-            if (syncObj == null) {
-                syncObj = new Object();
-                streamingSync.put(dcId, syncObj);
-            }
-        }
-
-        synchronized (syncObj) {
-            MTProto proto;
-            synchronized (streamingProtos) {
-                proto = streamingProtos.get(dcId);
-                if (proto != null) {
-                    if (proto.isClosed()) {
-                        Logger.d(TAG, "#" + dcId + "proto removed because of death");
-                        streamingProtos.remove(dcId);
-                        proto = null;
-                    }
-                }
-            }
-
-            if (proto == null) {
-                Logger.d(TAG, "#" + dcId + ": Creating proto for dc");
-                ConnectionInfo connectionInfo = state.getConnectionInfo(dcId);
-
-                if (connectionInfo == null) {
-                    Logger.w(TAG, "#" + dcId + ": Unable to find proper dc config");
-                    TLConfig config = doRpcCall(new TLRequestHelpGetConfig());
-                    state.updateSettings(config);
-                    connectionInfo = state.getConnectionInfo(dcId);
-                }
-
-                if (connectionInfo == null) {
-                    Logger.w(TAG, "#" + dcId + ": Still unable to find proper dc config");
-                    throw new TimeoutException();
-                }
-
-                if (dcId != primaryDc) {
-                    if (state.isAuthenticated(dcId)) {
-                        byte[] authKey = state.getAuthKey(dcId);
-                        if (authKey == null) {
-                            throw new TimeoutException();
-                        }
-                        proto = new MTProto(state.getMtProtoState(dcId), callback,
-                                new CallWrapper() {
-                                    @Override
-                                    public TLObject wrapObject(TLMethod srcRequest) {
-                                        return wrapForDc(dcId, srcRequest);
-                                    }
-                                }, CHANNELS_FS);
-
-                        if (!state.isAuthenticated(dcId)) {
-                            TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
-                            doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
-                        }
-
-                        streamingProtos.put(dcId, proto);
-                        return proto;
-                    } else {
-                        Logger.w(TAG, "#" + dcId + ": Creating key");
-                        Authorizer authorizer = new Authorizer();
-                        PqAuth auth = authorizer.doAuth(connectionInfo.getAddress(), connectionInfo.getPort());
-                        if (auth == null) {
-                            Logger.w(TAG, "#" + dcId + ": Timed out");
-                            throw new TimeoutException();
-                        }
-                        state.putAuthKey(dcId, auth.getAuthKey());
-                        state.setAuthenticated(dcId, false);
-                        state.getMtProtoState(dcId).initialServerSalt(auth.getServerSalt());
-
-                        byte[] authKey = state.getAuthKey(dcId);
-                        if (authKey == null) {
-                            Logger.w(TAG, "#" + dcId + ": auth key == null");
-                            throw new TimeoutException();
-                        }
-
-                        proto = new MTProto(state.getMtProtoState(dcId), callback,
-                                new CallWrapper() {
-                                    @Override
-                                    public TLObject wrapObject(TLMethod srcRequest) {
-                                        return wrapForDc(dcId, srcRequest);
-                                    }
-                                }, CHANNELS_FS);
-
-                        Logger.w(TAG, "#" + dcId + ": exporting auth");
-                        TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
-
-                        Logger.w(TAG, "#" + dcId + ": importing auth");
-                        doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
-
-                        state.setAuthenticated(dcId, true);
-
-                        streamingProtos.put(dcId, proto);
-
-                        return proto;
-                    }
-                } else {
-                    byte[] authKey = state.getAuthKey(dcId);
-                    if (authKey == null) {
-                        throw new TimeoutException();
-                    }
-                    proto = new MTProto(state.getMtProtoState(dcId), callback,
-                            new CallWrapper() {
-                                @Override
-                                public TLObject wrapObject(TLMethod srcRequest) {
-                                    return wrapForDc(dcId, srcRequest);
-                                }
-                            }, CHANNELS_FS);
-                    streamingProtos.put(dcId, proto);
-                    return proto;
-                }
-            } else {
-                Logger.w(TAG, "#" + dcId + ": returning proper proto");
-                return proto;
-            }
-        }
-    }
-
-    public int getPrimaryDc() {
-        return primaryDc;
-    }
-
     public boolean isClosed() {
         return isClosed;
     }
@@ -304,22 +158,16 @@ public class TelegramApi {
         }
     }
 
-    public <T extends TLObject> void doRpcCallWeak(TLMethod<T> method) {
-        doRpcCallWeak(method, DEFAULT_TIMEOUT);
+    public void resetConnectionInfo() {
+        mainProto.reloadConnectionInformation();
+        synchronized (dcProtos) {
+            for (MTProto proto : dcProtos.values()) {
+                proto.reloadConnectionInformation();
+            }
+        }
     }
 
-    public <T extends TLObject> void doRpcCallWeak(TLMethod<T> method, int timeout) {
-        doRpcCall(method, timeout, (RpcCallback) null);
-    }
-
-    public <T extends TLObject> void doRpcCall(TLMethod<T> method, RpcCallback<T> callback) {
-        doRpcCall(method, DEFAULT_TIMEOUT, callback);
-    }
-
-    public <T extends TLObject> void doRpcCall(TLMethod<T> method, int timeout, RpcCallback<T> callback) {
-        doRpcCall(method, timeout, callback, mainProto);
-    }
-
+    // Basic sync and async methods
     private <T extends TLObject> void doRpcCall(TLMethod<T> method, int timeout, RpcCallback<T> callback, MTProto destProto) {
         if (isClosed) {
             if (callback != null) {
@@ -348,24 +196,7 @@ public class TelegramApi {
         }
     }
 
-    public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int dcId) throws IOException {
-        return doRpcCallToDc(method, DEFAULT_TIMEOUT, dcId);
-    }
-
-    public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int timeout, int dcId) throws IOException {
-        MTProto proto = waitForStreaming(dcId);
-        return doRpcCall(method, timeout, proto);
-    }
-
-    public <T extends TLObject> T doRpcCall(TLMethod<T> method) throws IOException {
-        return doRpcCall(method, DEFAULT_TIMEOUT);
-    }
-
-    public <T extends TLObject> T doRpcCall(TLMethod<T> method, int timeout) throws IOException {
-        return doRpcCall(method, timeout, mainProto);
-    }
-
-    public <T extends TLObject> T doRpcCall(TLMethod<T> method, int timeout, MTProto destProto) throws IOException {
+    private <T extends TLObject> T doRpcCall(TLMethod<T> method, int timeout, MTProto destProto) throws IOException {
         if (isClosed) {
             throw new TimeoutException();
         }
@@ -430,6 +261,172 @@ public class TelegramApi {
         }
     }
 
+    private MTProto waitForDc(final int dcId) throws IOException {
+        Logger.d(TAG, "#" + dcId + ": waitForStreaming");
+        if (isClosed) {
+            Logger.w(TAG, "#" + dcId + ": Api is closed");
+            throw new TimeoutException();
+        }
+
+        if (!state.isAuthenticated(primaryDc)) {
+            Logger.w(TAG, "#" + dcId + ": Dc is not authenticated");
+            throw new TimeoutException();
+        }
+
+        Object syncObj;
+        synchronized (dcSync) {
+            syncObj = dcSync.get(dcId);
+            if (syncObj == null) {
+                syncObj = new Object();
+                dcSync.put(dcId, syncObj);
+            }
+        }
+
+        synchronized (syncObj) {
+            MTProto proto;
+            synchronized (dcProtos) {
+                proto = dcProtos.get(dcId);
+                if (proto != null) {
+                    if (proto.isClosed()) {
+                        Logger.d(TAG, "#" + dcId + "proto removed because of death");
+                        dcProtos.remove(dcId);
+                        proto = null;
+                    }
+                }
+            }
+
+            if (proto == null) {
+                Logger.d(TAG, "#" + dcId + ": Creating proto for dc");
+                ConnectionInfo[] connectionInfo = state.getAvailableConnections(dcId);
+
+                if (connectionInfo.length == 0) {
+                    Logger.w(TAG, "#" + dcId + ": Unable to find proper dc config");
+                    TLConfig config = doRpcCall(new TLRequestHelpGetConfig());
+                    state.updateSettings(config);
+                    resetConnectionInfo();
+                    connectionInfo = state.getAvailableConnections(dcId);
+                }
+
+                if (connectionInfo.length == 0) {
+                    Logger.w(TAG, "#" + dcId + ": Still unable to find proper dc config");
+                    throw new TimeoutException();
+                }
+
+                if (state.getAuthKey(dcId) != null) {
+                    byte[] authKey = state.getAuthKey(dcId);
+                    if (authKey == null) {
+                        throw new TimeoutException();
+                    }
+                    proto = new MTProto(state.getMtProtoState(dcId), callback,
+                            new CallWrapper() {
+                                @Override
+                                public TLObject wrapObject(TLMethod srcRequest) {
+                                    return wrapForDc(dcId, srcRequest);
+                                }
+                            }, CHANNELS_FS);
+
+                    dcProtos.put(dcId, proto);
+                    return proto;
+                } else {
+                    Logger.w(TAG, "#" + dcId + ": Creating key");
+                    Authorizer authorizer = new Authorizer();
+                    PqAuth auth = authorizer.doAuth(connectionInfo[0].getAddress(), connectionInfo[0].getPort());
+                    if (auth == null) {
+                        Logger.w(TAG, "#" + dcId + ": Timed out");
+                        throw new TimeoutException();
+                    }
+                    state.putAuthKey(dcId, auth.getAuthKey());
+                    state.setAuthenticated(dcId, false);
+                    state.getMtProtoState(dcId).initialServerSalt(auth.getServerSalt());
+
+                    byte[] authKey = state.getAuthKey(dcId);
+                    if (authKey == null) {
+                        Logger.w(TAG, "#" + dcId + ": auth key == null");
+                        throw new TimeoutException();
+                    }
+
+                    proto = new MTProto(state.getMtProtoState(dcId), callback,
+                            new CallWrapper() {
+                                @Override
+                                public TLObject wrapObject(TLMethod srcRequest) {
+                                    return wrapForDc(dcId, srcRequest);
+                                }
+                            }, CHANNELS_FS);
+
+                    dcProtos.put(dcId, proto);
+
+                    return proto;
+                }
+            } else {
+                Logger.w(TAG, "#" + dcId + ": returning proper proto");
+                return proto;
+            }
+        }
+    }
+
+    private MTProto waitForStreaming(final int dcId) throws IOException {
+        MTProto proto = waitForDc(dcId);
+
+        if (!state.isAuthenticated(dcId)) {
+            Logger.w(TAG, "#" + dcId + ": exporting auth");
+            TLExportedAuthorization exAuth = doRpcCall(new TLRequestAuthExportAuthorization(dcId));
+
+            Logger.w(TAG, "#" + dcId + ": importing auth");
+            doRpcCall(new TLRequestAuthImportAuthorization(exAuth.getId(), exAuth.getBytes()), DEFAULT_TIMEOUT, proto);
+
+            state.setAuthenticated(dcId, true);
+        }
+
+        return proto;
+    }
+
+    // Public async methods
+    public <T extends TLObject> void doRpcCallWeak(TLMethod<T> method) {
+        doRpcCallWeak(method, DEFAULT_TIMEOUT);
+    }
+
+    public <T extends TLObject> void doRpcCallWeak(TLMethod<T> method, int timeout) {
+        doRpcCall(method, timeout, (RpcCallback) null);
+    }
+
+    public <T extends TLObject> void doRpcCall(TLMethod<T> method, RpcCallback<T> callback) {
+        doRpcCall(method, DEFAULT_TIMEOUT, callback);
+    }
+
+    public <T extends TLObject> void doRpcCall(TLMethod<T> method, int timeout, RpcCallback<T> callback) {
+        doRpcCall(method, timeout, callback, mainProto);
+    }
+
+    // Public sync methods
+
+    public <T extends TLObject> T doRpcCall(TLMethod<T> method) throws IOException {
+        return doRpcCall(method, DEFAULT_TIMEOUT);
+    }
+
+    public <T extends TLObject> T doRpcCall(TLMethod<T> method, int timeout) throws IOException {
+        return doRpcCall(method, timeout, mainProto);
+    }
+
+    public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int dcId) throws IOException {
+        return doRpcCallToDc(method, DEFAULT_TIMEOUT, dcId);
+    }
+
+    public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int timeout, int dcId) throws IOException {
+        MTProto proto = waitForDc(dcId);
+        return doRpcCall(method, timeout, proto);
+    }
+
+    public boolean doSaveFilePart(long _fileId, int _filePart, byte[] _bytes) throws IOException {
+        MTProto proto = waitForStreaming(primaryDc);
+        TLBool res = doRpcCall(new TLRequestUploadSaveFilePart(_fileId, _filePart, _bytes), FILE_TIMEOUT, proto);
+        return res instanceof TLBoolTrue;
+    }
+
+    public TLFile doGetFile(int dcId, org.telegram.api.TLAbsInputFileLocation _location, int _offset, int _limit) throws IOException {
+        MTProto proto = waitForStreaming(dcId);
+        return doRpcCall(new TLRequestUploadGetFile(_location, _offset, _limit), FILE_TIMEOUT, proto);
+    }
+
     private class ProtoCallback implements MTProtoCallback {
 
         @Override
@@ -443,7 +440,7 @@ public class TelegramApi {
             if (proto == mainProto) {
                 registeredInApi.add(primaryDc);
             } else {
-                for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
                     if (p.getValue() == proto) {
                         registeredInApi.add(p.getKey());
                         break;
@@ -463,11 +460,11 @@ public class TelegramApi {
             if (proto == mainProto) {
                 close();
             } else {
-                synchronized (streamingProtos) {
-                    for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                synchronized (dcProtos) {
+                    for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
                         if (p.getValue() == proto) {
                             state.setAuthenticated(p.getKey(), false);
-                            streamingProtos.remove(p.getKey());
+                            dcProtos.remove(p.getKey());
                             break;
                         }
                     }
@@ -485,7 +482,7 @@ public class TelegramApi {
             if (proto == mainProto) {
                 registeredInApi.add(primaryDc);
             } else {
-                for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
                     if (p.getValue() == proto) {
                         registeredInApi.add(p.getKey());
                         break;
@@ -510,7 +507,7 @@ public class TelegramApi {
             if (proto == mainProto) {
                 registeredInApi.add(primaryDc);
             } else {
-                for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
                     if (p.getValue() == proto) {
                         registeredInApi.add(p.getKey());
                         break;
@@ -557,7 +554,7 @@ public class TelegramApi {
                 if (proto == mainProto) {
                     dc = primaryDc;
                 } else {
-                    for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                    for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
                         if (p.getValue() == proto) {
                             dc = p.getKey();
                             break;
@@ -599,7 +596,7 @@ public class TelegramApi {
                 if (proto == mainProto) {
                     registeredInApi.add(primaryDc);
                 } else {
-                    for (Map.Entry<Integer, MTProto> p : streamingProtos.entrySet()) {
+                    for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
                         if (p.getValue() == proto) {
                             registeredInApi.add(p.getKey());
                             break;

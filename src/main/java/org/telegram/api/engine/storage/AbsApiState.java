@@ -29,9 +29,7 @@ public interface AbsApiState {
 
     void putAuthKey(int dcId, byte[] key);
 
-
-    ConnectionInfo getConnectionInfo(int dcId);
-
+    ConnectionInfo[] getAvailableConnections(int dcId);
 
     AbsMTProtoState getMtProtoState(int dcId);
 
