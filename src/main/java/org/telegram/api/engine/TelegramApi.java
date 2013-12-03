@@ -330,7 +330,7 @@ public class TelegramApi {
                 } else {
                     Logger.w(TAG, "#" + dcId + ": Creating key");
                     Authorizer authorizer = new Authorizer();
-                    PqAuth auth = authorizer.doAuth(connectionInfo[0].getAddress(), connectionInfo[0].getPort());
+                    PqAuth auth = authorizer.doAuth(connectionInfo);
                     if (auth == null) {
                         Logger.w(TAG, "#" + dcId + ": Timed out");
                         throw new TimeoutException();
