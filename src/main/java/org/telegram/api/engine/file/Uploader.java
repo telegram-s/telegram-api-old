@@ -18,6 +18,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class Uploader {
 
+    private static final int KB = 1024;
+    private static final int MB = 1024 * KB;
+
     private final AtomicInteger fileIds = new AtomicInteger(1);
 
     public static final int FILE_QUEUED = 0;
@@ -34,8 +37,13 @@ public class Uploader {
     private static final int PARALLEL_PARTS_COUNT = 4;
 
     private static final int BLOCK_SIZE = 8 * 1024;
+    private static final int[] BLOCK_SIZES = new int[]{8 * KB, 16 * KB, 32 * KB, 64 * KB, 128 * KB, 256 * KB, 512 * KB};
 
     private static final long DEFAULT_DELAY = 15 * 1000;
+
+    private static final int BIG_FILE_MIN = 10 * 1024 * 1024;
+
+    private static final int MAX_BLOCK_COUNT = 3000;
 
     private final String TAG;
 
@@ -117,7 +125,7 @@ public class Uploader {
             return null;
         }
 
-        return new UploadResult(task.blocks.length, task.hash);
+        return new UploadResult(task.blocks.length, task.hash, false);
     }
 
     public synchronized int requestTask(long randomId, String srcFile, UploadListener listener) {
@@ -129,6 +137,12 @@ public class Uploader {
         try {
             task.file = new RandomAccessFile(srcFile, "r");
             task.size = (int) task.file.length();
+            if (task.size >= BIG_FILE_MIN) {
+                task.userBigFile = true;
+                Logger.d(TAG, "File #" + task.uniqId + "| Using big file method");
+            } else {
+                task.userBigFile = false;
+            }
             long start = System.currentTimeMillis();
             Logger.d(TAG, "File #" + task.uniqId + "| Calculating hash");
             task.hash = CryptoUtils.MD5(task.file);
@@ -138,7 +152,18 @@ public class Uploader {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        task.blockSize = BLOCK_SIZE;
+
+        task.blockSize = BLOCK_SIZES[BLOCK_SIZES.length - 1];
+        for (int size : BLOCK_SIZES) {
+            int totalBlockCount = (int) Math.ceil(((double) task.size) / size);
+            if (totalBlockCount < MAX_BLOCK_COUNT) {
+                task.blockSize = size;
+                break;
+            }
+        }
+
+        Logger.d(TAG, "File #" + task.uniqId + "| Using block size: " + task.blockSize);
+
         int totalBlockCount = (int) Math.ceil(((double) task.size) / task.blockSize);
         task.blocks = new UploadBlock[totalBlockCount];
         for (int i = 0; i < totalBlockCount; i++) {
@@ -275,12 +300,18 @@ public class Uploader {
     }
 
     public static class UploadResult {
+        private boolean usedBigFile;
         private int partsCount;
         private String hash;
 
-        public UploadResult(int partsCount, String hash) {
+        public UploadResult(int partsCount, String hash, boolean usedBigFile) {
             this.partsCount = partsCount;
             this.hash = hash;
+            this.usedBigFile = usedBigFile;
+        }
+
+        public boolean isUsedBigFile() {
+            return usedBigFile;
         }
 
         public int getPartsCount() {
@@ -295,6 +326,8 @@ public class Uploader {
     private class UploadTask {
 
         public UploadListener listener;
+
+        public boolean userBigFile;
 
         public long uniqId;
 
@@ -344,7 +377,11 @@ public class Uploader {
                 long start = System.nanoTime();
                 Logger.d(TAG, "Block #" + block.index + " of #" + block.task.uniqId + "| Starting");
                 try {
-                    api.doSaveFilePart(block.task.uniqId, block.index, block.workData);
+                    if (block.task.userBigFile) {
+                        api.doSaveBigFilePart(block.task.uniqId, block.index, block.task.blocks.length, block.workData);
+                    } else {
+                        api.doSaveFilePart(block.task.uniqId, block.index, block.workData);
+                    }
                     Logger.d(TAG, "Block #" + block.index + " of #" + block.task.uniqId + "| Uploaded in " + (System.nanoTime() - start) / (1000 * 1000L) + " ms");
                     onBlockUploaded(block);
                 } catch (IOException e) {

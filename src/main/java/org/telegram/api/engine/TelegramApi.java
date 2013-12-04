@@ -422,6 +422,12 @@ public class TelegramApi {
         return res instanceof TLBoolTrue;
     }
 
+    public boolean doSaveBigFilePart(long _fileId, int _filePart, int _totalParts, byte[] _bytes) throws IOException {
+        MTProto proto = waitForStreaming(primaryDc);
+        TLBool res = doRpcCall(new TLRequestUploadSaveBigFilePart(_fileId, _filePart, _totalParts, _bytes), FILE_TIMEOUT, proto);
+        return res instanceof TLBoolTrue;
+    }
+
     public TLFile doGetFile(int dcId, org.telegram.api.TLAbsInputFileLocation _location, int _offset, int _limit) throws IOException {
         MTProto proto = waitForStreaming(dcId);
         return doRpcCall(new TLRequestUploadGetFile(_location, _offset, _limit), FILE_TIMEOUT, proto);
