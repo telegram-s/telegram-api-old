@@ -7,8 +7,6 @@ import org.telegram.mtproto.secure.CryptoUtils;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,7 +34,6 @@ public class Uploader {
 
     private static final int PARALLEL_PARTS_COUNT = 4;
 
-    private static final int BLOCK_SIZE = 8 * 1024;
     private static final int[] BLOCK_SIZES = new int[]{8 * KB, 16 * KB, 32 * KB, 64 * KB, 128 * KB, 256 * KB, 512 * KB};
 
     private static final long DEFAULT_DELAY = 15 * 1000;
@@ -125,7 +122,7 @@ public class Uploader {
             return null;
         }
 
-        return new UploadResult(task.blocks.length, task.hash, false);
+        return new UploadResult(task.blocks.length, task.hash, task.usedBigFile);
     }
 
     public synchronized int requestTask(long randomId, String srcFile, UploadListener listener) {
@@ -138,10 +135,10 @@ public class Uploader {
             task.file = new RandomAccessFile(srcFile, "r");
             task.size = (int) task.file.length();
             if (task.size >= BIG_FILE_MIN) {
-                task.userBigFile = true;
+                task.usedBigFile = true;
                 Logger.d(TAG, "File #" + task.uniqId + "| Using big file method");
             } else {
-                task.userBigFile = false;
+                task.usedBigFile = false;
             }
             long start = System.currentTimeMillis();
             Logger.d(TAG, "File #" + task.uniqId + "| Calculating hash");
@@ -327,7 +324,7 @@ public class Uploader {
 
         public UploadListener listener;
 
-        public boolean userBigFile;
+        public boolean usedBigFile;
 
         public long uniqId;
 
@@ -377,11 +374,12 @@ public class Uploader {
                 long start = System.nanoTime();
                 Logger.d(TAG, "Block #" + block.index + " of #" + block.task.uniqId + "| Starting");
                 try {
-                    if (block.task.userBigFile) {
+                    if (block.task.usedBigFile) {
                         api.doSaveBigFilePart(block.task.uniqId, block.index, block.task.blocks.length, block.workData);
                     } else {
                         api.doSaveFilePart(block.task.uniqId, block.index, block.workData);
                     }
+                    block.workData = null;
                     Logger.d(TAG, "Block #" + block.index + " of #" + block.task.uniqId + "| Uploaded in " + (System.nanoTime() - start) / (1000 * 1000L) + " ms");
                     onBlockUploaded(block);
                 } catch (IOException e) {
