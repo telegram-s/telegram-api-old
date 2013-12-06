@@ -255,14 +255,18 @@ public class Downloader {
     }
 
     private synchronized void onBlockDownloaded(DownloadBlock block, byte[] data) {
-        block.task.lastSuccessBlock = System.nanoTime();
-        block.state = BLOCK_COMPLETED;
         try {
-            block.task.file.seek(block.index * block.task.blockSize);
-            block.task.file.write(data);
+            if (block.task.file != null) {
+                block.task.file.seek(block.index * block.task.blockSize);
+                block.task.file.write(data);
+            } else {
+                return;
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        block.task.lastSuccessBlock = System.nanoTime();
+        block.state = BLOCK_COMPLETED;
         if (block.task.listener != null) {
             int downloadedCount = 0;
             for (DownloadBlock b : block.task.blocks) {
