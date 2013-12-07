@@ -407,6 +407,10 @@ public class TelegramApi {
         return doRpcCall(method, timeout, mainProto);
     }
 
+    public <T extends TLObject> T doRpcCallGzip(TLMethod<T> method, int timeout) throws IOException {
+        return doRpcCall(new GzipRequest<T>(method), timeout, mainProto);
+    }
+
     public <T extends TLObject> T doRpcCallToDc(TLMethod<T> method, int dcId) throws IOException {
         return doRpcCallToDc(method, DEFAULT_TIMEOUT, dcId);
     }
