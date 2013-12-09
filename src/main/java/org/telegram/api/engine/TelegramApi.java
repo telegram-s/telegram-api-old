@@ -82,16 +82,25 @@ public class TelegramApi {
         if (state.getAuthKey(state.getPrimaryDc()) == null) {
             throw new RuntimeException("ApiState might be in authenticated state for primaryDc");
         }
+        long start = System.currentTimeMillis();
         this.apiCallback = _apiCallback;
         this.appInfo = _appInfo;
         this.state = state;
         this.primaryDc = state.getPrimaryDc();
-        this.callback = new ProtoCallback();
-        this.apiContext = new TLApiContext();
         this.isClosed = false;
+        this.callback = new ProtoCallback();
+        Logger.d(TAG, "Phase 0 in " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
+        this.apiContext = new TLApiContext();
+        Logger.d(TAG, "Phase 1 in " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
         this.timeoutThread = new TimeoutThread();
         this.timeoutThread.start();
+        Logger.d(TAG, "Phase 2 in " + (System.currentTimeMillis() - start) + " ms");
 
+        start = System.currentTimeMillis();
         this.mainProto = new MTProto(state.getMtProtoState(primaryDc), callback,
                 new CallWrapper() {
                     @Override
@@ -100,8 +109,12 @@ public class TelegramApi {
                     }
                 }, CHANNELS_MAIN);
 
+        Logger.d(TAG, "Phase 3 in " + (System.currentTimeMillis() - start) + " ms");
+
+        start = System.currentTimeMillis();
         this.downloader = new Downloader(this);
         this.uploader = new Uploader(this);
+        Logger.d(TAG, "Phase 4 in " + (System.currentTimeMillis() - start) + " ms");
     }
 
     public Downloader getDownloader() {
