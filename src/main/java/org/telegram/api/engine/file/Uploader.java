@@ -3,6 +3,7 @@ package org.telegram.api.engine.file;
 import org.telegram.api.engine.Logger;
 import org.telegram.api.engine.TelegramApi;
 import org.telegram.mtproto.secure.CryptoUtils;
+import org.telegram.mtproto.secure.Entropy;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -122,13 +123,13 @@ public class Uploader {
             return null;
         }
 
-        return new UploadResult(task.blocks.length, task.hash, task.usedBigFile);
+        return new UploadResult(task.uniqId, task.blocks.length, task.hash, task.usedBigFile);
     }
 
-    public synchronized int requestTask(long randomId, String srcFile, UploadListener listener) {
+    public synchronized int requestTask(String srcFile, UploadListener listener) {
         UploadTask task = new UploadTask();
         task.taskId = fileIds.getAndIncrement();
-        task.uniqId = randomId;
+        task.uniqId = Entropy.generateRandomId();
         task.listener = listener;
         task.srcFile = srcFile;
         try {
@@ -297,14 +298,20 @@ public class Uploader {
     }
 
     public static class UploadResult {
+        private long fileId;
         private boolean usedBigFile;
         private int partsCount;
         private String hash;
 
-        public UploadResult(int partsCount, String hash, boolean usedBigFile) {
+        public UploadResult(long fileId, int partsCount, String hash, boolean usedBigFile) {
+            this.fileId = fileId;
             this.partsCount = partsCount;
             this.hash = hash;
             this.usedBigFile = usedBigFile;
+        }
+
+        public long getFileId() {
+            return fileId;
         }
 
         public boolean isUsedBigFile() {
