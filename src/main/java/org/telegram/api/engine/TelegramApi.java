@@ -618,6 +618,7 @@ public class TelegramApi {
         @Override
         public void run() {
             while (!isClosed) {
+                Logger.d(TAG, "Sender iteration");
                 RpcCallbackWrapper wrapper = null;
                 synchronized (callbacks) {
                     for (RpcCallbackWrapper w : callbacks.values()) {
@@ -636,7 +637,7 @@ public class TelegramApi {
                     }
                     if (wrapper == null) {
                         try {
-                            callbacks.wait(1000);
+                            callbacks.wait();
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                             return;
@@ -646,11 +647,6 @@ public class TelegramApi {
                 }
 
                 if (mainProto == null) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
                     continue;
                 }
 
@@ -664,11 +660,6 @@ public class TelegramApi {
                     }
                 } else {
                     if (!dcProtos.containsKey(wrapper.dcId) || (!state.isAuthenticated(wrapper.dcId) && wrapper.isAuthRequred)) {
-                        try {
-                            Thread.sleep(1000);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
                         continue;
                     }
 
@@ -818,6 +809,7 @@ public class TelegramApi {
         @Override
         public void run() {
             while (!isClosed) {
+                Logger.d(TAG, "Connection iteration");
                 if (mainProto == null) {
                     if (state.getAuthKey(primaryDc) == null) {
                         try {
@@ -874,14 +866,14 @@ public class TelegramApi {
 
                     if (dcId == null) {
                         try {
-                            dcRequired.wait(DEFAULT_TIMEOUT_CHECK);
+                            dcRequired.wait();
                         } catch (InterruptedException e) {
                             // e.printStackTrace();
                         }
                         continue;
                     }
 
-                    authRequired = dcRequired.get(dcId);
+                    authRequired = dcRequired.remove(dcId);
                 }
 
                 if (dcProtos.containsKey(dcId)) {
