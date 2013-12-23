@@ -18,6 +18,8 @@ public interface AbsApiState {
 
     int getPrimaryDc();
 
+    public void setPrimaryDc(int dc);
+
     boolean isAuthenticated(int dcId);
 
     void setAuthenticated(int dcId, boolean auth);

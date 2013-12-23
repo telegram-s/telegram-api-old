@@ -125,8 +125,12 @@ public class TelegramApi {
     }
 
     public void switchToDc(int dcId) {
+        if (this.mainProto != null) {
+            this.mainProto.close();
+        }
         this.mainProto = null;
         this.primaryDc = dcId;
+        this.state.setPrimaryDc(dcId);
         synchronized (dcRequired) {
             dcRequired.notifyAll();
         }
@@ -156,9 +160,10 @@ public class TelegramApi {
 
     protected void onMessageArrived(TLObject object) {
         if (object instanceof TLAbsUpdates) {
+            Logger.d(TAG, "<< update " + object.toString());
             apiCallback.onUpdate((TLAbsUpdates) object);
         } else {
-
+            Logger.d(TAG, "<< unknown object " + object.toString());
         }
     }
 
@@ -227,11 +232,11 @@ public class TelegramApi {
             } else {
                 checkDc(destDc);
             }
-        }
 
-        synchronized (callbacks) {
             callbacks.notifyAll();
         }
+
+        Logger.d(TAG, ">> #" + +localRpcId + ": " + method.toString());
     }
 
     private <T extends TLObject> T doRpcCall(TLMethod<T> method, int timeout, int destDc) throws IOException {
@@ -275,7 +280,7 @@ public class TelegramApi {
                     waitObj.notifyAll();
                 }
             }
-        }, destDc);
+        }, destDc, authRequired);
 
         synchronized (waitObj) {
             try {
@@ -485,13 +490,14 @@ public class TelegramApi {
                     TLObject object = currentCallback.method.deserializeResponse(response, apiContext);
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
-                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Result: " + object + " (" + currentCallback.elapsed() + " ms)");
+                            Logger.d(TAG, "<< #" + +currentCallback.id + " ignored " + object + " in " + currentCallback.elapsed() + " ms");
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
-                    Logger.d(TAG, proto.toString() + "| RPC #" + callId + ": Result " + object + " (" + currentCallback.elapsed() + " ms)");
+                    Logger.d(TAG, "<< #" + +currentCallback.id + " " + object + " in " + currentCallback.elapsed() + " ms");
+
                     timeoutTimes.remove(currentCallback.timeoutTime);
                     currentCallback.callback.onResult(object);
                 }
@@ -558,13 +564,13 @@ public class TelegramApi {
                 if (currentCallback != null) {
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
-                            Logger.w(TAG, proto + "| RPC #" + callId + ": Ignored Error #" + errorCode + " " + message + " (" + currentCallback.elapsed() + " ms)");
+                            Logger.d(TAG, "<< #" + +currentCallback.id + " ignored error #" + errorCode + " " + message + " in " + currentCallback.elapsed() + " ms");
                             return;
                         } else {
                             currentCallback.isCompleted = true;
                         }
                     }
-                    Logger.w(TAG, proto + "| RPC #" + callId + ": Error #" + errorCode + " " + message + " (" + currentCallback.elapsed() + " ms)");
+                    Logger.d(TAG, "<< #" + +currentCallback.id + " error #" + errorCode + " " + message + " in " + currentCallback.elapsed() + " ms");
                     timeoutTimes.remove(currentCallback.timeoutTime);
                     currentCallback.callback.onError(errorCode, message);
                 }
@@ -575,11 +581,14 @@ public class TelegramApi {
 
         @Override
         public void onConfirmed(int callId) {
-            RpcCallbackWrapper currentCallback;
+            RpcCallbackWrapper currentCallback = null;
             synchronized (callbacks) {
-                currentCallback = callbacks.get(callId);
+                if (sentRequests.containsKey(callId)) {
+                    currentCallback = callbacks.get(sentRequests.get(callId));
+                }
             }
             if (currentCallback != null) {
+                Logger.d(TAG, "<< #" + +currentCallback.id + " confirmed in " + currentCallback.elapsed() + " ms");
                 synchronized (currentCallback) {
                     if (currentCallback.isCompleted || currentCallback.isConfirmed) {
                         return;
@@ -606,13 +615,21 @@ public class TelegramApi {
                 synchronized (callbacks) {
                     for (RpcCallbackWrapper w : callbacks.values()) {
                         if (!w.isSent) {
-                            wrapper = w;
-                            break;
+                            if (w.dcId == 0 && mainProto != null) {
+                                wrapper = w;
+                                break;
+                            }
+                            if (w.dcId != 0 && dcProtos.containsKey(w.dcId)) {
+                                if (state.isAuthenticated(w.dcId) || !w.isAuthRequred) {
+                                    wrapper = w;
+                                    break;
+                                }
+                            }
                         }
                     }
                     if (wrapper == null) {
                         try {
-                            callbacks.wait();
+                            callbacks.wait(1000);
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                             return;
@@ -636,7 +653,7 @@ public class TelegramApi {
                         int rpcId = mainProto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
-                        Logger.d(TAG, "Sent rpc request #" + wrapper.id);
+                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex());
                     }
                 } else {
                     if (!dcProtos.containsKey(wrapper.dcId) || !state.isAuthenticated(wrapper.dcId)) {
@@ -654,7 +671,7 @@ public class TelegramApi {
                         int rpcId = proto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
-                        Logger.d(TAG, "Sent rpc request #" + wrapper.id);
+                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex());
                     }
                 }
             }
@@ -800,7 +817,7 @@ public class TelegramApi {
                                             return wrapForDc(primaryDc, srcRequest);
                                         }
                                     }, CHANNELS_MAIN);
-                            Logger.d(TAG, "Main Proto created in " + (System.currentTimeMillis() - start) + " ms");
+                            Logger.d(TAG, "#MTProto #" + mainProto.getInstanceIndex() + " created in " + (System.currentTimeMillis() - start) + " ms");
                         } catch (IOException e) {
                             e.printStackTrace();
                             try {
@@ -820,8 +837,12 @@ public class TelegramApi {
                                         return wrapForDc(primaryDc, srcRequest);
                                     }
                                 }, CHANNELS_MAIN);
-                        Logger.d(TAG, "Main Proto created in " + (System.currentTimeMillis() - start) + " ms");
+                        Logger.d(TAG, "#MTProto #" + mainProto.getInstanceIndex() + " created in " + (System.currentTimeMillis() - start) + " ms");
                     }
+                    synchronized (callbacks) {
+                        callbacks.notifyAll();
+                    }
+                    continue;
                 }
 
                 Integer dcId = null;
@@ -854,6 +875,9 @@ public class TelegramApi {
                     if (authRequired && !state.isAuthenticated(dcId)) {
                         try {
                             waitForAuthDc(dcId);
+                            synchronized (callbacks) {
+                                callbacks.notifyAll();
+                            }
                         } catch (IOException e) {
                             try {
                                 Thread.sleep(1000);
@@ -870,6 +894,9 @@ public class TelegramApi {
                             waitForAuthDc(dcId);
                         } else {
                             waitForDc(dcId);
+                        }
+                        synchronized (callbacks) {
+                            callbacks.notifyAll();
                         }
                     } catch (IOException e) {
                         e.printStackTrace();
