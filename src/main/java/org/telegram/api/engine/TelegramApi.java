@@ -935,7 +935,7 @@ public class TelegramApi {
 
                     if (key == null) {
                         try {
-                            timeoutTimes.wait(DEFAULT_TIMEOUT_CHECK);
+                            timeoutTimes.wait();
                         } catch (InterruptedException e) {
                             // e.printStackTrace();
                         }
