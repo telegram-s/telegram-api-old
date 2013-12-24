@@ -339,12 +339,20 @@ public class TelegramApi {
         return doRpcCall(new GzipRequest<T>(method), timeout, 0);
     }
 
+    public <T extends TLObject> T doRpcCallNonAuth(TLMethod<T> method) throws IOException {
+        return doRpcCallNonAuth(method, DEFAULT_TIMEOUT, primaryDc);
+    }
+
     public <T extends TLObject> T doRpcCallNonAuth(TLMethod<T> method, int dcId) throws IOException {
         return doRpcCallNonAuth(method, DEFAULT_TIMEOUT, dcId);
     }
 
     public <T extends TLObject> T doRpcCallNonAuth(TLMethod<T> method, int timeout, int dcId) throws IOException {
         return doRpcCall(method, timeout, dcId, false);
+    }
+
+    public <T extends TLObject> void doRpcCallNonAuth(TLMethod<T> method, int timeout, RpcCallback<T> callback) {
+        doRpcCall(method, timeout, callback, primaryDc, false);
     }
 
     public boolean doSaveFilePart(long _fileId, int _filePart, byte[] _bytes) throws IOException {
@@ -490,7 +498,10 @@ public class TelegramApi {
                     }
                 }
                 if (currentCallback != null && currentCallback.method != null) {
+                    long start = System.currentTimeMillis();
                     TLObject object = currentCallback.method.deserializeResponse(response, apiContext);
+                    Logger.d(TAG, "<< #" + +currentCallback.id + " deserialized " + object + " in " + (System.currentTimeMillis() - start) + " ms");
+
                     synchronized (currentCallback) {
                         if (currentCallback.isCompleted) {
                             Logger.d(TAG, "<< #" + +currentCallback.id + " ignored " + object + " in " + currentCallback.elapsed() + " ms");
@@ -624,8 +635,10 @@ public class TelegramApi {
                     for (RpcCallbackWrapper w : callbacks.values()) {
                         if (!w.isSent) {
                             if (w.dcId == 0 && mainProto != null) {
-                                wrapper = w;
-                                break;
+                                if (state.isAuthenticated(primaryDc) || !w.isAuthRequred) {
+                                    wrapper = w;
+                                    break;
+                                }
                             }
                             if (w.dcId != 0 && dcProtos.containsKey(w.dcId)) {
                                 if (state.isAuthenticated(w.dcId) || !w.isAuthRequred) {
@@ -651,6 +664,9 @@ public class TelegramApi {
                 }
 
                 if (wrapper.dcId == 0) {
+                    if (!state.isAuthenticated(primaryDc) && wrapper.isAuthRequred) {
+                        continue;
+                    }
                     synchronized (callbacks) {
                         boolean isHighPriority = callback != null && callback instanceof RpcCallbackEx;
                         int rpcId = mainProto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
@@ -877,7 +893,7 @@ public class TelegramApi {
                 }
 
                 if (dcProtos.containsKey(dcId)) {
-                    if (authRequired && !state.isAuthenticated(dcId)) {
+                    if (authRequired && !state.isAuthenticated(dcId) && state.isAuthenticated(primaryDc)) {
                         try {
                             waitForAuthDc(dcId);
                             synchronized (callbacks) {
@@ -895,7 +911,7 @@ public class TelegramApi {
                     }
                 } else {
                     try {
-                        if (authRequired) {
+                        if (authRequired && !state.isAuthenticated(dcId) && state.isAuthenticated(primaryDc)) {
                             waitForAuthDc(dcId);
                         } else {
                             waitForDc(dcId);
