@@ -52,4 +52,9 @@ public class GzipRequest<T extends TLObject> extends TLMethod<T> {
     public void deserializeBody(InputStream stream, TLContext context) throws IOException {
         throw new IOException("Unsupported operation");
     }
+
+    @Override
+    public String toString() {
+        return "gzip<" + method + ">";
+    }
 }
