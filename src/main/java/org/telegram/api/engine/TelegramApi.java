@@ -183,6 +183,15 @@ public class TelegramApi {
         }
     }
 
+    public void resetNetworkBackoff() {
+        if (mainProto != null) {
+            mainProto.resetNetworkBackoff();
+        }
+        for (MTProto mtProto : dcProtos.values()) {
+            mtProto.resetNetworkBackoff();
+        }
+    }
+
     public void resetConnectionInfo() {
         mainProto.reloadConnectionInformation();
         synchronized (dcProtos) {
