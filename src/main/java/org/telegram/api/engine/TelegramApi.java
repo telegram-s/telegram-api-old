@@ -697,7 +697,7 @@ public class TelegramApi {
                         int rpcId = mainProto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
-                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex());
+                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex() + " with id #" + rpcId);
                     }
                 } else {
                     if (!dcProtos.containsKey(wrapper.dcId) || (!state.isAuthenticated(wrapper.dcId) && wrapper.isAuthRequred)) {
@@ -710,7 +710,7 @@ public class TelegramApi {
                         int rpcId = proto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
-                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex());
+                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex() + " with id #" + rpcId);
                     }
                 }
             }
