@@ -533,7 +533,9 @@ public class TelegramApi {
                     }
                     Logger.d(TAG, "<< #" + +currentCallback.id + " " + object + " in " + currentCallback.elapsed() + " ms");
 
-                    timeoutTimes.remove(currentCallback.timeoutTime);
+                    synchronized (timeoutTimes) {
+                        timeoutTimes.remove(currentCallback.timeoutTime);
+                    }
                     if (currentCallback.callback != null) {
                         currentCallback.callback.onResult(object);
                     }
@@ -608,7 +610,9 @@ public class TelegramApi {
                         }
                     }
                     Logger.d(TAG, "<< #" + +currentCallback.id + " error #" + errorCode + " " + message + " in " + currentCallback.elapsed() + " ms");
-                    timeoutTimes.remove(currentCallback.timeoutTime);
+                    synchronized (timeoutTimes) {
+                        timeoutTimes.remove(currentCallback.timeoutTime);
+                    }
                     if (currentCallback.callback != null) {
                         currentCallback.callback.onError(errorCode, message);
                     }
