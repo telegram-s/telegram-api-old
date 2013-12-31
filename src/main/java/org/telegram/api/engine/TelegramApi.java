@@ -173,7 +173,7 @@ public class TelegramApi {
 
     public void close() {
         if (!this.isClosed) {
-            apiCallback.onApiDies(this);
+            apiCallback.onAuthCancelled(this);
             this.isClosed = true;
             if (this.timeoutThread != null) {
                 this.timeoutThread.interrupt();
@@ -373,7 +373,7 @@ public class TelegramApi {
     }
 
     public <T extends TLObject> void doRpcCallNonAuth(TLMethod<T> method, int timeout, RpcCallback<T> callback) {
-        doRpcCall(method, timeout, callback, primaryDc, false);
+        doRpcCall(method, timeout, callback, 0, false);
     }
 
     public boolean doSaveFilePart(long _fileId, int _filePart, byte[] _bytes) throws IOException {
@@ -420,6 +420,10 @@ public class TelegramApi {
                     }
                 }
             }
+        } else if (mainProto == null) {
+            synchronized (dcRequired) {
+                dcRequired.notifyAll();
+            }
         }
     }
 
@@ -454,7 +458,21 @@ public class TelegramApi {
             }
 
             if (proto == mainProto) {
-                close();
+                synchronized (dcRequired) {
+                    mainProto.close();
+                    mainProto = null;
+                    state.setAuthenticated(primaryDc, false);
+                    dcRequired.notifyAll();
+                }
+
+                synchronized (dcProtos) {
+                    for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
+                        p.getValue().close();
+                        state.setAuthenticated(p.getKey(), false);
+                    }
+                }
+
+                apiCallback.onAuthCancelled(TelegramApi.this);
             } else {
                 synchronized (dcProtos) {
                     for (Map.Entry<Integer, MTProto> p : dcProtos.entrySet()) {
@@ -465,8 +483,10 @@ public class TelegramApi {
                         }
                     }
                 }
+                synchronized (dcRequired) {
+                    dcRequired.notifyAll();
+                }
             }
-            // close();
         }
 
         @Override

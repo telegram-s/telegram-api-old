@@ -9,7 +9,7 @@ import org.telegram.api.TLAbsUpdates;
  * Time: 7:42
  */
 public interface ApiCallback {
-    public void onApiDies(TelegramApi api);
+    public void onAuthCancelled(TelegramApi api);
 
     public void onUpdatesInvalidated(TelegramApi api);
 
