@@ -274,8 +274,17 @@ public class Downloader {
                     downloadedCount++;
                 }
             }
-            int percent = downloadedCount * 100 / block.task.blocks.length;
-            block.task.listener.onPartDownloaded(percent, downloadedCount);
+
+            if (downloadedCount == block.task.blocks.length) {
+                block.task.listener.onPartDownloaded(100, downloadedCount);
+            } else {
+                long time = System.nanoTime() / 1000000;
+                if (block.task.lastNotifyTime - time > 500) {
+                    int percent = downloadedCount * 100 / block.task.blocks.length;
+                    block.task.listener.onPartDownloaded(percent, downloadedCount);
+                    block.task.lastNotifyTime = time;
+                }
+            }
         }
         updateFileQueueStates();
     }
@@ -291,6 +300,7 @@ public class Downloader {
     private class DownloadTask {
 
         public DownloadListener listener;
+        public long lastNotifyTime;
 
         public int taskId;
 
