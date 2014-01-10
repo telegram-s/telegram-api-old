@@ -730,7 +730,7 @@ public class TelegramApi {
                         int rpcId = proto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
-                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + mainProto.getInstanceIndex() + " with id #" + rpcId);
+                        Logger.d(TAG, "#> #" + wrapper.id + " sent to MTProto #" + proto.getInstanceIndex() + " with id #" + rpcId);
                     }
                 }
             }
