@@ -107,7 +107,7 @@ public class Uploader {
                 try {
                     threadLocker.wait(DEFAULT_DELAY);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    Logger.e(TAG, e);
                     return;
                 }
             }
@@ -146,9 +146,9 @@ public class Uploader {
             task.hash = CryptoUtils.MD5(task.file);
             Logger.d(TAG, "File #" + task.uniqId + "| Hash " + task.hash + " in " + (System.currentTimeMillis() - start) + " ms");
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            Logger.e(TAG, e);
         } catch (IOException e) {
-            e.printStackTrace();
+            Logger.e(TAG, e);
         }
 
         task.blockSize = BLOCK_SIZES[BLOCK_SIZES.length - 1];
@@ -236,7 +236,7 @@ public class Uploader {
                     task.file = null;
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                Logger.e(TAG, e);
             }
         }
         updateFileQueueStates();
@@ -267,7 +267,7 @@ public class Uploader {
                     task.file.seek(task.blockSize * i);
                     task.file.readFully(block);
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Logger.e(TAG, e);
                 }
                 task.blocks[i].workData = block;
                 return task.blocks[i];
@@ -398,7 +398,6 @@ public class Uploader {
                 } catch (IOException e) {
                     Logger.d(TAG, "Block #" + block.index + " of #" + block.task.uniqId + "| Failure");
                     Logger.e(TAG, e);
-                    e.printStackTrace();
                     onBlockFailure(block);
                 }
             }

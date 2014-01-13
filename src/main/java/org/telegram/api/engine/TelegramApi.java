@@ -296,7 +296,6 @@ public class TelegramApi {
                 waitObj.wait(timeout);
                 completed[0] = true;
             } catch (InterruptedException e) {
-                e.printStackTrace();
                 throw new TimeoutException();
             }
         }
@@ -510,7 +509,7 @@ public class TelegramApi {
                 TLObject object = apiContext.deserializeMessage(message);
                 onMessageArrived(object);
             } catch (Throwable t) {
-                t.printStackTrace();
+                Logger.e(TAG, t);
             }
         }
 
@@ -561,7 +560,7 @@ public class TelegramApi {
                     }
                 }
             } catch (Throwable t) {
-                t.printStackTrace();
+                Logger.e(TAG, t);
             }
         }
 
@@ -638,7 +637,7 @@ public class TelegramApi {
                     }
                 }
             } catch (Throwable t) {
-                t.printStackTrace();
+                Logger.e(TAG, t);
             }
         }
 
@@ -697,7 +696,7 @@ public class TelegramApi {
                         try {
                             callbacks.wait();
                         } catch (InterruptedException e) {
-                            e.printStackTrace();
+                            Logger.e(TAG, e);
                             return;
                         }
                         continue;
@@ -885,12 +884,12 @@ public class TelegramApi {
                                     }, CHANNELS_MAIN);
                             Logger.d(TAG, "#MTProto #" + mainProto.getInstanceIndex() + " created in " + (System.currentTimeMillis() - start) + " ms");
                         } catch (IOException e) {
-                            e.printStackTrace();
+                            Logger.e(TAG, e);
                             try {
                                 Thread.sleep(1000);
                                 continue;
                             } catch (InterruptedException e1) {
-                                e1.printStackTrace();
+                                Logger.e(TAG, e1);
                                 return;
                             }
                         }
@@ -921,7 +920,7 @@ public class TelegramApi {
                         try {
                             dcId = dcRequired.firstKey();
                         } catch (Exception e) {
-                            e.printStackTrace();
+                            Logger.e(TAG, e);
                         }
                     }
 
@@ -949,7 +948,7 @@ public class TelegramApi {
                                 Thread.sleep(1000);
                                 continue;
                             } catch (InterruptedException e1) {
-                                e1.printStackTrace();
+                                Logger.e(TAG, e1);
                                 return;
                             }
                         }
@@ -965,7 +964,7 @@ public class TelegramApi {
                             callbacks.notifyAll();
                         }
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        Logger.e(TAG, e);
                     }
                 }
             }
@@ -990,7 +989,7 @@ public class TelegramApi {
                         try {
                             key = timeoutTimes.firstKey();
                         } catch (Exception e) {
-                            e.printStackTrace();
+                            Logger.e(TAG, e);
                         }
                     }
 

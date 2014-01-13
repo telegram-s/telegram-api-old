@@ -102,7 +102,7 @@ public class Downloader {
                 try {
                     threadLocker.wait(DEFAULT_DELAY);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    Logger.e(TAG, e);
                     return;
                 }
             }
@@ -121,9 +121,9 @@ public class Downloader {
             task.file = new RandomAccessFile(destFile, "rw");
             task.file.setLength(size);
         } catch (FileNotFoundException e) {
-            e.printStackTrace();
+            Logger.e(TAG, e);
         } catch (IOException e) {
-            e.printStackTrace();
+            Logger.e(TAG, e);
         }
         task.taskId = fileIds.getAndIncrement();
         task.dcId = dcId;
@@ -202,7 +202,7 @@ public class Downloader {
                     task.file = null;
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                Logger.e(TAG, e);
             }
         }
         updateFileQueueStates();
@@ -218,7 +218,7 @@ public class Downloader {
                     task.file = null;
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                Logger.e(TAG, e);
             }
         }
         updateFileQueueStates();
@@ -263,7 +263,7 @@ public class Downloader {
                 return;
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Logger.e(TAG, e);
         }
         block.task.lastSuccessBlock = System.nanoTime();
         block.state = BLOCK_COMPLETED;
