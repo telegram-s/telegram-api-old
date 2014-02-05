@@ -21,6 +21,7 @@ import org.telegram.tl.TLMethod;
 import org.telegram.tl.TLObject;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -96,7 +97,18 @@ public class TelegramApi {
         Logger.d(TAG, "Phase 0 in " + (System.currentTimeMillis() - start) + " ms");
 
         start = System.currentTimeMillis();
-        this.apiContext = new TLApiContext();
+        this.apiContext = new TLApiContext() {
+            private AtomicInteger integer = new AtomicInteger(0);
+
+            @Override
+            public TLObject deserializeMessage(int clazzId, InputStream stream) throws IOException {
+                if (integer.incrementAndGet() % 100 == 99) {
+                    Thread.yield();
+                }
+                return super.deserializeMessage(clazzId, stream);
+            }
+        };
+
         Logger.d(TAG, "Phase 1 in " + (System.currentTimeMillis() - start) + " ms");
 
         start = System.currentTimeMillis();

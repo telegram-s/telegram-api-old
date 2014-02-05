@@ -329,8 +329,15 @@ public class Downloader {
 
         @Override
         public void run() {
+            setPriority(Thread.MIN_PRIORITY);
             while (true) {
                 Logger.d(TAG, "DownloadFileThread iteration");
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    return;
+                }
                 DownloadBlock block = fetchBlock();
                 if (block == null) {
                     synchronized (threadLocker) {

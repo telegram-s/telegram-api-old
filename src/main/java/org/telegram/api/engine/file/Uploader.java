@@ -364,13 +364,20 @@ public class Uploader {
     private class UploadFileThread extends Thread {
 
         public UploadFileThread() {
-            setName("UploadFileThread#"+hashCode());
+            setName("UploadFileThread#" + hashCode());
         }
 
         @Override
         public void run() {
+            setPriority(Thread.MIN_PRIORITY);
             while (true) {
                 Logger.d(TAG, "UploadFileThread iteration");
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    return;
+                }
                 UploadBlock block = fetchBlock();
                 if (block == null) {
                     synchronized (threadLocker) {
