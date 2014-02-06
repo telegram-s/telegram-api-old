@@ -684,6 +684,7 @@ public class TelegramApi {
 
         @Override
         public void run() {
+            setPriority(Thread.MIN_PRIORITY);
             while (!isClosed) {
                 Logger.d(TAG, "Sender iteration");
                 RpcCallbackWrapper wrapper = null;
@@ -880,6 +881,7 @@ public class TelegramApi {
 
         @Override
         public void run() {
+            setPriority(Thread.MIN_PRIORITY);
             while (!isClosed) {
                 Logger.d(TAG, "Connection iteration");
                 if (mainProto == null) {
