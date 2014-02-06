@@ -102,7 +102,7 @@ public class TelegramApi {
 
             @Override
             public TLObject deserializeMessage(int clazzId, InputStream stream) throws IOException {
-                if (integer.incrementAndGet() % 100 == 99) {
+                if (integer.incrementAndGet() % 10 == 9) {
                     Thread.yield();
                 }
                 return super.deserializeMessage(clazzId, stream);
