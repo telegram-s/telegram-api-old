@@ -4,6 +4,7 @@ import org.telegram.api.TLAbsInputFileLocation;
 import org.telegram.api.engine.Logger;
 import org.telegram.api.engine.TelegramApi;
 import org.telegram.api.upload.TLFile;
+import org.telegram.tl.TLBytes;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -254,11 +255,11 @@ public class Downloader {
         return null;
     }
 
-    private synchronized void onBlockDownloaded(DownloadBlock block, byte[] data) {
+    private synchronized void onBlockDownloaded(DownloadBlock block, TLBytes data) {
         try {
             if (block.task.file != null) {
                 block.task.file.seek(block.index * block.task.blockSize);
-                block.task.file.write(data);
+                block.task.file.write(data.getData(), data.getOffset(), data.getLength());
             } else {
                 return;
             }

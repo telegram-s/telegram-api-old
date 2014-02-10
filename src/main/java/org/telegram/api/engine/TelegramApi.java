@@ -15,10 +15,7 @@ import org.telegram.mtproto.MTProtoCallback;
 import org.telegram.mtproto.pq.Authorizer;
 import org.telegram.mtproto.pq.PqAuth;
 import org.telegram.mtproto.state.ConnectionInfo;
-import org.telegram.tl.TLBool;
-import org.telegram.tl.TLBoolTrue;
-import org.telegram.tl.TLMethod;
-import org.telegram.tl.TLObject;
+import org.telegram.tl.*;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -388,12 +385,19 @@ public class TelegramApi {
     }
 
     public boolean doSaveFilePart(long _fileId, int _filePart, byte[] _bytes) throws IOException {
-        TLBool res = doRpcCall(new TLRequestUploadSaveFilePart(_fileId, _filePart, _bytes), FILE_TIMEOUT, primaryDc, true);
+        TLBool res = doRpcCall(
+                new TLRequestUploadSaveFilePart(_fileId, _filePart, new TLBytes(_bytes)),
+                FILE_TIMEOUT,
+                primaryDc,
+                true);
         return res instanceof TLBoolTrue;
     }
 
     public boolean doSaveBigFilePart(long _fileId, int _filePart, int _totalParts, byte[] _bytes) throws IOException {
-        TLBool res = doRpcCall(new TLRequestUploadSaveBigFilePart(_fileId, _filePart, _totalParts, _bytes), FILE_TIMEOUT, primaryDc);
+        TLBool res = doRpcCall(
+                new TLRequestUploadSaveBigFilePart(_fileId, _filePart, _totalParts, new TLBytes(_bytes)),
+                FILE_TIMEOUT,
+                primaryDc);
         return res instanceof TLBoolTrue;
     }
 
