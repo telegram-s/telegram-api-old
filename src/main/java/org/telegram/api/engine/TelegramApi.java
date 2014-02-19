@@ -15,6 +15,7 @@ import org.telegram.mtproto.MTProtoCallback;
 import org.telegram.mtproto.pq.Authorizer;
 import org.telegram.mtproto.pq.PqAuth;
 import org.telegram.mtproto.state.ConnectionInfo;
+import org.telegram.mtproto.util.BytesCache;
 import org.telegram.tl.*;
 
 import java.io.IOException;
@@ -103,6 +104,16 @@ public class TelegramApi {
                     Thread.yield();
                 }
                 return super.deserializeMessage(clazzId, stream);
+            }
+
+            @Override
+            public TLBytes allocateBytes(int size) {
+                return new TLBytes(BytesCache.getInstance().allocate(size), 0, size);
+            }
+
+            @Override
+            public void releaseBytes(TLBytes unused) {
+                BytesCache.getInstance().put(unused.getData());
             }
         };
 

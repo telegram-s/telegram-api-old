@@ -265,6 +265,8 @@ public class Downloader {
             }
         } catch (IOException e) {
             Logger.e(TAG, e);
+        } finally {
+            api.getApiContext().releaseBytes(data);
         }
         block.task.lastSuccessBlock = System.nanoTime();
         block.state = BLOCK_COMPLETED;
