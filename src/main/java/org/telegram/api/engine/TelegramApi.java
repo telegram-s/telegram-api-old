@@ -597,8 +597,9 @@ public class TelegramApi {
                 return;
             }
 
-            if (errorCode == 400 && message != null && message.startsWith("CONNECTION_NOT_INITED")) {
-                Logger.w(TAG, proto + ": (!)Error #400 CONNECTION_NOT_INITED");
+            if (errorCode == 400 && message != null &&
+                    (message.startsWith("CONNECTION_NOT_INITED") || message.startsWith("CONNECTION_LAYER_INVALID"))) {
+                Logger.w(TAG, proto + ": (!)Error #400 " + message);
 
                 int dc = -1;
                 if (proto == mainProto) {
