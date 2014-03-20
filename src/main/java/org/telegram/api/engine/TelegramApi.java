@@ -163,10 +163,10 @@ public class TelegramApi {
 
     private TLMethod wrapForDc(int dcId, TLMethod method) {
         if (registeredInApi.contains(dcId)) {
-            return new TLRequestInvokeWithLayer11(method);
+            return new TLRequestInvokeWithLayer12(method);
         }
 
-        return new TLRequestInvokeWithLayer11(new TLRequestInitConnection(
+        return new TLRequestInvokeWithLayer12(new TLRequestInitConnection(
                 appInfo.getApiId(), appInfo.getDeviceModel(), appInfo.getSystemVersion(), appInfo.getAppVersion(), appInfo.getLangCode(), method));
     }
 
