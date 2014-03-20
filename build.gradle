@@ -1,12 +1,5 @@
-def basicVersion = '1.0'
-
-if (project.hasProperty('buildIndex')) {
-    project.version = basicVersion + '.' + project.buildIndex
-} else {
-    project.version = basicVersion + '-SNAPSHOT'
-}
-
 project.group = "org.telegram"
+def basicVersion = '1.0'
 
 apply plugin: 'java'
 
@@ -15,3 +8,11 @@ dependencies {
     compile project(':mtproto')
     compile files('libs/tl-api-v11.jar')
 }
+
+if (project.hasProperty('buildIndex')) {
+    project.version = basicVersion + '.' + project.buildIndex
+} else {
+    project.version = basicVersion + '-SNAPSHOT'
+}
+
+apply plugin: 'maven'
