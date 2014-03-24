@@ -741,7 +741,7 @@ public class TelegramApi {
                         continue;
                     }
                     synchronized (callbacks) {
-                        boolean isHighPriority = callback != null && callback instanceof RpcCallbackEx;
+                        boolean isHighPriority = wrapper.callback != null && wrapper.callback instanceof RpcCallbackEx;
                         int rpcId = mainProto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
@@ -754,7 +754,7 @@ public class TelegramApi {
 
                     MTProto proto = dcProtos.get(wrapper.dcId);
                     synchronized (callbacks) {
-                        boolean isHighPriority = callback != null && callback instanceof RpcCallbackEx;
+                        boolean isHighPriority = wrapper.callback != null && wrapper.callback instanceof RpcCallbackEx;
                         int rpcId = proto.sendRpcMessage(wrapper.method, wrapper.timeout, isHighPriority);
                         sentRequests.put(rpcId, wrapper.id);
                         wrapper.isSent = true;
