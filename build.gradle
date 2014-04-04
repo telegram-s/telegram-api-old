@@ -13,5 +13,6 @@ apply plugin: 'java'
 dependencies {
     compile project(':tl-core')
     compile project(':mtproto')
+    compile project(':actors')
     compile files('libs/tl-api-v12.jar')
 }

@@ -1,5 +1,6 @@
 package org.telegram.api.engine;
 
+import org.telegram.actors.ActorSystem;
 import org.telegram.api.TLAbsUpdates;
 import org.telegram.api.TLApiContext;
 import org.telegram.api.TLConfig;
@@ -32,25 +33,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TelegramApi {
 
     private static final AtomicInteger rpcCallIndex = new AtomicInteger(0);
-
     private static final AtomicInteger instanceIndex = new AtomicInteger(1000);
 
-    private final String TAG;
-
-    private final int INSTANCE_INDEX;
+    public static final int MODE_FULL_POWER = 0;
+    public static final int MODE_LOW_POWER = 1;
 
     private static final int CHANNELS_MAIN = 1;
     private static final int CHANNELS_FS = 2;
-
-    private static final int DEFAULT_TIMEOUT_CHECK = 15000;
     private static final int DEFAULT_TIMEOUT = 15000;
     private static final int FILE_TIMEOUT = 45000;
+    private static final long PUSH_TIMEOUT = 7 * 24 * 60 * 60 * 1000L;// 7 days
+
+    private final String TAG;
+    private final int INSTANCE_INDEX;
 
     private boolean isClosed;
 
     private int primaryDc;
 
     private MTProto mainProto;
+    private MTProto mainPushProto;
 
     private final HashMap<Integer, MTProto> dcProtos = new HashMap<Integer, MTProto>();
     private final HashMap<Integer, Object> dcSync = new HashMap<Integer, Object>();
@@ -81,9 +83,15 @@ public class TelegramApi {
 
     private Uploader uploader;
 
+    private ActorSystem actorSystem;
+
+    private int mode;
+
     public TelegramApi(AbsApiState state, AppInfo _appInfo, ApiCallback _apiCallback) {
         this.INSTANCE_INDEX = instanceIndex.incrementAndGet();
         this.TAG = "TelegramApi#" + INSTANCE_INDEX;
+        this.actorSystem = new ActorSystem();
+        this.actorSystem.addThread("connector");
 
         long start = System.currentTimeMillis();
         this.apiCallback = _apiCallback;
@@ -92,6 +100,7 @@ public class TelegramApi {
         this.primaryDc = state.getPrimaryDc();
         this.isClosed = false;
         this.callback = new ProtoCallback();
+        this.mode = MODE_FULL_POWER;
         Logger.d(TAG, "Phase 0 in " + (System.currentTimeMillis() - start) + " ms");
 
         start = System.currentTimeMillis();
@@ -148,11 +157,30 @@ public class TelegramApi {
         if (this.mainProto != null) {
             this.mainProto.close();
         }
+        if (this.mainPushProto != null) {
+            this.mainPushProto.close();
+        }
+        this.mainPushProto = null;
         this.mainProto = null;
         this.primaryDc = dcId;
         this.state.setPrimaryDc(dcId);
         synchronized (dcRequired) {
             dcRequired.notifyAll();
+        }
+    }
+
+    public void switchMode(int mode) {
+        if (this.mode != mode) {
+            this.mode = mode;
+            if (mode == MODE_FULL_POWER) {
+                if (mainProto != null) {
+                    mainProto.switchMode(MTProto.MODE_GENERAL);
+                }
+            } else {
+                if (mainProto != null) {
+                    mainProto.switchMode(MTProto.MODE_GENERAL_LOW_MODE);
+                }
+            }
         }
     }
 
@@ -199,13 +227,21 @@ public class TelegramApi {
                 this.timeoutThread.interrupt();
                 this.timeoutThread = null;
             }
-            mainProto.close();
+            if (mainProto != null) {
+                mainProto.close();
+            }
+            if (mainPushProto != null) {
+                mainPushProto.close();
+            }
         }
     }
 
     public void resetNetworkBackoff() {
         if (mainProto != null) {
             mainProto.resetNetworkBackoff();
+        }
+        if (mainPushProto != null) {
+            mainPushProto.resetNetworkBackoff();
         }
         for (MTProto mtProto : dcProtos.values()) {
             mtProto.resetNetworkBackoff();
@@ -214,6 +250,7 @@ public class TelegramApi {
 
     public void resetConnectionInfo() {
         mainProto.reloadConnectionInformation();
+        mainPushProto.reloadConnectionInformation();
         synchronized (dcProtos) {
             for (MTProto proto : dcProtos.values()) {
                 proto.reloadConnectionInformation();
@@ -832,7 +869,8 @@ public class TelegramApi {
                                     public TLObject wrapObject(TLMethod srcRequest) {
                                         return wrapForDc(dcId, srcRequest);
                                     }
-                                }, CHANNELS_FS);
+                                }, CHANNELS_FS, MTProto.MODE_FILE
+                        );
 
                         dcProtos.put(dcId, proto);
                         return proto;
@@ -860,7 +898,8 @@ public class TelegramApi {
                                     public TLObject wrapObject(TLMethod srcRequest) {
                                         return wrapForDc(dcId, srcRequest);
                                     }
-                                }, CHANNELS_FS);
+                                }, CHANNELS_FS, MTProto.MODE_FILE
+                        );
 
                         dcProtos.put(dcId, proto);
 
@@ -911,7 +950,23 @@ public class TelegramApi {
                                         public TLObject wrapObject(TLMethod srcRequest) {
                                             return wrapForDc(primaryDc, srcRequest);
                                         }
-                                    }, CHANNELS_MAIN);
+                                    }, CHANNELS_MAIN, mode == MODE_FULL_POWER ? MTProto.MODE_GENERAL : MTProto.MODE_GENERAL_LOW_MODE
+                            );
+                            mainPushProto = new MTProto(state.getMtProtoState(primaryDc), callback,
+                                    new CallWrapper() {
+                                        @Override
+                                        public TLObject wrapObject(TLMethod srcRequest) {
+                                            return wrapForDc(primaryDc, srcRequest);
+                                        }
+                                    }, CHANNELS_MAIN, MTProto.MODE_PUSH
+                            );
+                            mainProto.sendRpcMessage(new TLRequestAccountRegisterDevice(7,
+                                    StreamingUtils.readLong(mainPushProto.getSession(), 0) + "",
+                                    appInfo.deviceModel,
+                                    appInfo.systemVersion,
+                                    appInfo.appVersion,
+                                    false,
+                                    appInfo.langCode), PUSH_TIMEOUT, false);
                             Logger.d(TAG, "#MTProto #" + mainProto.getInstanceIndex() + " created in " + (System.currentTimeMillis() - start) + " ms");
                         } catch (IOException e) {
                             Logger.e(TAG, e);
@@ -931,7 +986,23 @@ public class TelegramApi {
                                     public TLObject wrapObject(TLMethod srcRequest) {
                                         return wrapForDc(primaryDc, srcRequest);
                                     }
-                                }, CHANNELS_MAIN);
+                                }, CHANNELS_MAIN, mode == MODE_FULL_POWER ? MTProto.MODE_GENERAL : MTProto.MODE_GENERAL_LOW_MODE
+                        );
+                        mainPushProto = new MTProto(state.getMtProtoState(primaryDc), callback,
+                                new CallWrapper() {
+                                    @Override
+                                    public TLObject wrapObject(TLMethod srcRequest) {
+                                        return wrapForDc(primaryDc, srcRequest);
+                                    }
+                                }, CHANNELS_MAIN, MTProto.MODE_PUSH
+                        );
+                        mainProto.sendRpcMessage(new TLRequestAccountRegisterDevice(7,
+                                StreamingUtils.readLong(mainPushProto.getSession(), 0) + "",
+                                appInfo.deviceModel,
+                                appInfo.systemVersion,
+                                appInfo.appVersion,
+                                false,
+                                appInfo.langCode), PUSH_TIMEOUT, false);
                         Logger.d(TAG, "#MTProto #" + mainProto.getInstanceIndex() + " created in " + (System.currentTimeMillis() - start) + " ms");
                     }
                     synchronized (callbacks) {
