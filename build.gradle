@@ -1,3 +1,12 @@
+buildscript {
+	repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:0.8'
+    }
+}
+
 def basicVersion = '1.0'
 
 if (project.hasProperty('buildIndex')) {
@@ -9,6 +18,7 @@ if (project.hasProperty('buildIndex')) {
 project.group = "org.telegram"
 
 apply plugin: 'java'
+apply plugin: 'shadow'
 
 dependencies {
     compile project(':tl-core')
