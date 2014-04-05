@@ -7,7 +7,7 @@ buildscript {
     }
 }
 
-def basicVersion = '1.0'
+def basicVersion = '1.1'
 
 if (project.hasProperty('buildIndex')) {
     project.version = basicVersion + '.' + project.buildIndex
